@@ -134,3 +134,117 @@ def test_wrapper_refuses_when_protected_and_the_service_is_down(tmp_path):
     r = subprocess.run([wrapper, sys.executable, "-c", "print('started')"], env=env, cwd=home,
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 2 and "protection is on" in r.stderr and r.stdout == ""
+
+
+# --- Excluded projects ------------------------------------------------------------------------
+
+UP = "https://api.anthropic.com"
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch, claude_dir):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    r = tmp_path / "work" / "app"
+    (r / "src" / "deep").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(r)], check=True)
+    return r
+
+
+def local(root):
+    return json.loads((root / ".claude" / "settings.local.json").read_text())
+
+
+def test_exclude_writes_the_repo_root_local_settings_and_keeps_it_out_of_git(repo):
+    root = protect.exclude(repo / "src" / "deep", UP)
+    assert root == repo.resolve()
+    assert local(repo) == {"env": {"ANTHROPIC_BASE_URL": UP}}
+    assert not (repo / ".claude" / "settings.local.json.sotto-backup").exists()
+    assert subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", ".claude/settings.local.json"]).returncode == 0
+    status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
+                            capture_output=True, text=True).stdout
+    assert status == ""  # nothing to commit
+    assert protect.is_excluded(repo / "src") == UP
+    assert protect.excluded_projects() == [{"path": str(repo.resolve()), "url": UP, "active": True}]
+
+
+def test_include_restores_the_file(repo):
+    (repo / ".claude").mkdir()
+    (repo / ".claude" / "settings.local.json").write_text(json.dumps({"permissions": {"allow": ["Bash(ls)"]}}))
+    protect.exclude(repo, UP)
+    protect.include(repo / "src")
+    assert local(repo) == {"permissions": {"allow": ["Bash(ls)"]}}
+    assert protect.is_excluded(repo) is None and protect.excluded_projects() == []
+    with pytest.raises(ProtectError, match="not excluded"):
+        protect.include(repo)
+
+
+def test_exclude_refuses_a_tracked_file_and_another_gateway(repo):
+    (repo / ".claude").mkdir()
+    f = repo / ".claude" / "settings.local.json"
+    f.write_text("{}")
+    subprocess.run(["git", "-C", str(repo), "add", "-f", ".claude/settings.local.json"], check=True)
+    with pytest.raises(ProtectError, match="tracked by git"):
+        protect.exclude(repo, UP)
+    subprocess.run(["git", "-C", str(repo), "rm", "-q", "--cached", ".claude/settings.local.json"], check=True)
+    f.write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://gateway.corp.internal"}}))
+    with pytest.raises(ProtectError, match="already sends"):
+        protect.exclude(repo, UP)
+
+
+def test_a_worktree_uses_the_main_checkout(repo):
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+                    "--allow-empty", "-m", "init"], check=True)
+    wt = repo.parent / "app-wt"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", str(wt)], check=True)
+    assert protect.project_root(wt) == repo.resolve()
+
+
+def test_a_folder_outside_git_is_its_own_project(tmp_path, claude_dir, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    d = tmp_path / "plain"
+    d.mkdir()
+    assert protect.exclude(d, UP) == d.resolve()
+    assert protect.is_excluded(d) == UP and protect.is_excluded(tmp_path) is None
+
+
+def test_hand_removed_setting_means_not_excluded(repo):
+    protect.exclude(repo, UP)
+    (repo / ".claude" / "settings.local.json").write_text("{}")
+    assert protect.is_excluded(repo) is None
+    assert protect.excluded_projects()[0]["active"] is False
+
+
+def test_an_excluded_project_is_not_a_bypass_risk_but_another_value_is(repo):
+    protect.exclude(repo, UP)
+    assert launch.bypass_risks(repo, 7788) == []
+    (repo / "src" / ".claude").mkdir()
+    (repo / "src" / ".claude" / "settings.local.json").write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "https://x"}}))
+    assert any("src/.claude" in r for r in launch.bypass_risks(repo / "src", 7788))
+
+
+def test_sotto_claude_refuses_in_an_excluded_project(repo, monkeypatch):
+    from typer.testing import CliRunner
+
+    from sotto.cli import app
+
+    protect.exclude(repo, UP)
+    monkeypatch.chdir(repo)
+    r = CliRunner().invoke(app, ["claude", "-p", "hi"])
+    assert r.exit_code == 2 and "excluded" in r.output
+
+
+def test_wrapper_runs_claude_directly_in_an_excluded_project(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    env = {k: v for k, v in os.environ.items() if k not in launch.BYPASS_KEYS and k != "CLAUDE_CONFIG_DIR"}
+    env["HOME"] = str(home)
+    # Exclude through the CLI, with the same HOME the wrapper sees.
+    sotto = os.path.join(os.path.dirname(sys.executable), "sotto")
+    subprocess.run([sotto, "exclude", str(proj)], env=env, check=True, capture_output=True)
+    wrapper = os.path.join(os.path.dirname(sys.executable), "sotto-claude-wrapper")
+    r = subprocess.run([wrapper, sys.executable, "-c", "import os; print(os.environ.get('ANTHROPIC_BASE_URL'))"],
+                       env=env, cwd=proj, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0 and r.stdout == "None\n" and r.stderr == ""  # no proxy started, nothing injected

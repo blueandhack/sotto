@@ -79,6 +79,16 @@ sotto protect on      # Claude Code's user settings now send every session to it
 
 `sotto protect` changes one key, `env.ANTHROPIC_BASE_URL`, in `~/.claude/settings.json`, and keeps a backup next to it. Sessions already running switch over when it is turned on; turning it off reaches only sessions started afterwards. While it is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
+### Leave a project out
+
+```sh
+sotto exclude ~/Projects/some-repo     # Claude Code there goes straight to the API, unscanned
+sotto exclude --list
+sotto include ~/Projects/some-repo     # scan it again
+```
+
+`sotto exclude` sets `env.ANTHROPIC_BASE_URL` to sotto's upstream in the project's `.claude/settings.local.json` (at the git repository's root, as Claude Code reads it), which outranks `sotto protect`. That file is never committed: sotto refuses if git tracks it and otherwise adds it to `.git/info/exclude`. Claude Code applies it once you trust the folder; until then the project still goes through sotto. Open sessions there switch at once when you exclude, but keep going straight to the API after `sotto include` until they restart. In an excluded project the VS Code wrapper starts Claude Code without sotto, and `sotto claude` refuses. The Mac app lists exclusions in Settings.
+
 ### Scan files (pre-commit)
 
 ```sh

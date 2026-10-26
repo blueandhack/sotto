@@ -48,9 +48,10 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
 def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:
     """Places that could route Claude Code around sotto. Any hit means: do not start.
     An ANTHROPIC_BASE_URL pointing at sotto itself on `port` (`sotto protect`) is not a risk."""
-    from .protect import is_sotto_url, settings_path
+    from .protect import is_excluded, is_sotto_url, settings_path
 
     risks = [f"environment variable {k} is set" for k in BYPASS_KEYS[1:] if os.environ.get(k)]
+    excluded = is_excluded(cwd)  # reported by the callers as an exclusion, not a risk
     user = settings_path()
     files = [user, user.with_name("settings.local.json"),
              Path("/Library/Application Support/ClaudeCode/managed-settings.json")]
@@ -65,6 +66,8 @@ def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:
             continue
         for k in BYPASS_KEYS:
             ours = k == "ANTHROPIC_BASE_URL" and port is not None and is_sotto_url(str(env.get(k)), port)
+            ours = ours or (k == "ANTHROPIC_BASE_URL" and excluded is not None and f.name == "settings.local.json"
+                            and env.get(k) == excluded)
             if k in env and not ours:
                 risks.append(f"{f} sets env {k}")
     return risks
@@ -225,6 +228,15 @@ def wrap_main() -> int:
     log_to_file(cfg.log_level)
     if not os.access(command[0], os.X_OK):
         return refuse(f"cannot run {command[0]}: not an executable file")
+    from .protect import is_excluded
+
+    if is_excluded(Path.cwd()):
+        # `sotto exclude` sends Claude Code in this project straight to the API: run it as is.
+        logging.getLogger("sotto").info("wrapper: project excluded, running Claude Code without sotto")
+        try:
+            return _run_child(command, dict(os.environ))
+        except OSError as e:
+            return refuse(f"cannot run {command[0]}: {e.strerror}")
     port = shared_serve_port(cfg)
     if port is None and protected(cfg):
         return refuse(PROTECTED_BUT_DOWN)

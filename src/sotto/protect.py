@@ -66,9 +66,9 @@ def _read(path: Path) -> dict:
     return data
 
 
-def _write(path: Path, data: dict) -> None:
+def _write(path: Path, data: dict, backup: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
+    if backup and path.exists():
         shutil.copy2(path, path.with_name(path.name + ".sotto-backup"))
     tmp = path.with_name(path.name + ".sotto-tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n")
@@ -108,3 +108,144 @@ def disable(port: int) -> Status:
             data.pop("env")
         _write(path, data)
     return status(port)
+
+
+# --- Excluded projects -----------------------------------------------------------------------
+#
+# A project is excluded by setting env.ANTHROPIC_BASE_URL in its `.claude/settings.local.json`
+# to where sotto would have forwarded (the upstream). Project local settings outrank the user
+# settings `enable` writes, the file stays out of git, and Claude Code applies its env once the
+# folder is trusted (until then, the project still goes through sotto). sotto records each
+# exclusion so it can list them and tell its own value from someone else's.
+
+def excluded_file() -> Path:
+    return Path.home() / ".config" / "sotto" / "excluded.json"
+
+
+def project_root(path: Path) -> Path:
+    """Where Claude Code keeps a project's local settings: the git repository's root (the main
+    checkout's, for a worktree), else the folder itself; also the folder itself when the root is
+    the home folder or not owned by this user."""
+    import subprocess
+
+    path = path.resolve()
+    try:
+        out = subprocess.run(["git", "-C", str(path), "rev-parse", "--path-format=absolute", "--git-common-dir",
+                              "--show-toplevel"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return path
+    lines = out.stdout.split("\n")
+    if out.returncode != 0 or len(lines) < 2:
+        return path
+    common, top = Path(lines[0]), Path(lines[1])
+    root = common.parent if common.name == ".git" else top
+    if root == Path.home().resolve() or any(p.exists() and p.stat().st_uid != os.getuid() for p in (root, root / ".git")):
+        return path
+    return root
+
+
+def _local_settings(root: Path) -> Path:
+    return root / ".claude" / "settings.local.json"
+
+
+def _registry() -> dict[str, str]:
+    try:
+        data = json.loads(excluded_file().read_text())
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_registry(reg: dict[str, str]) -> None:
+    f = excluded_file()
+    f.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(reg, indent=2, sort_keys=True) + "\n")
+    tmp.replace(f)
+
+
+def is_excluded(path: Path) -> str | None:
+    """The URL Claude Code goes to directly in the project holding `path`, if sotto excluded it."""
+    root = project_root(path)
+    url = _registry().get(str(root))
+    if url is None:
+        return None
+    try:
+        value = _read(_local_settings(root)).get("env", {}).get(KEY)
+    except ProtectError:
+        return None
+    return url if value == url else None
+
+
+def _keep_out_of_git(root: Path, file: Path) -> None:
+    """Never let the exclusion be committed: refuse a tracked file, and add an untracked one to
+    the repository's own exclude list (.git/info/exclude, which is not committed either)."""
+    import subprocess
+
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=10)
+
+    try:
+        if git("rev-parse", "--git-dir").returncode != 0:
+            return
+        rel = str(file.relative_to(root))
+        if git("ls-files", "--error-unmatch", rel).returncode == 0:
+            raise ProtectError(f"{file} is tracked by git; an exclusion there would be committed for everyone")
+        if git("check-ignore", "-q", rel).returncode != 0:
+            common = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip())
+            info = common / "info" / "exclude"
+            info.parent.mkdir(parents=True, exist_ok=True)
+            with open(info, "a") as f:
+                f.write(f"\n# added by sotto exclude\n/{rel}\n")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise ProtectError(f"could not check git for {root}: {e}") from e
+
+
+def exclude(path: Path, upstream: str) -> Path:
+    """Send Claude Code in this project straight to `upstream`, around sotto. Returns the root."""
+    root = project_root(path)
+    file = _local_settings(root)
+    data = _read(file)
+    current = data.get("env", {}).get(KEY)
+    if current is not None and current != upstream:
+        raise ProtectError(f"{file} already sends Claude Code to {current}; remove it there first")
+    _keep_out_of_git(root, file)
+    if current != upstream:
+        data.setdefault("env", {})[KEY] = upstream
+        _write(file, data, backup=False)  # a backup in the project could end up committed
+    reg = _registry()
+    reg[str(root)] = upstream
+    _save_registry(reg)
+    return root
+
+
+def include(path: Path) -> Path:
+    """Undo `exclude`: remove sotto's value from the project's local settings."""
+    root = project_root(path)
+    reg = _registry()
+    url = reg.pop(str(root), None)
+    if url is None:
+        raise ProtectError(f"{root} is not excluded")
+    file = _local_settings(root)
+    try:
+        data = _read(file)
+    except ProtectError:
+        data = None
+    if data is not None and data.get("env", {}).get(KEY) == url:
+        del data["env"][KEY]
+        if not data["env"]:
+            data.pop("env")
+        _write(file, data, backup=False)
+    _save_registry(reg)
+    return root
+
+
+def excluded_projects() -> list[dict]:
+    out = []
+    for root, url in sorted(_registry().items()):
+        try:
+            active = _read(_local_settings(Path(root))).get("env", {}).get(KEY) == url
+        except ProtectError:
+            active = False
+        out.append({"path": root, "url": url, "active": active})
+    return out

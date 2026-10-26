@@ -316,6 +316,7 @@ struct SettingsPage: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 }
+                VStack(spacing: 12) {
                 Card(title: "Connection") {
                     VStack(spacing: 0) {
                         row("Status", { StatusDot(connection: store.connection) })
@@ -329,6 +330,9 @@ struct SettingsPage: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                ExclusionsCard(engine: engine)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer()
         }

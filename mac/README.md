@@ -8,7 +8,7 @@ A menu-bar app that sets sotto up, runs it in the background and shows what it d
 - **Activity:** recent requests with what was masked and restored, plus a per-minute chart.
 - **Detection:** the request and detection funnels, and masked values by type.
 - **Performance:** scan time against the 150 ms budget, and its distribution.
-- **Settings:** Setup (download the model, start the background service, protect Claude Code), appearance (System, Light or Dark), preview data, connection details.
+- **Settings:** Setup (download the model, start the background service, protect Claude Code), excluded projects (`sotto exclude`), appearance (System, Light or Dark), preview data, connection details.
 
 ![Overview, light](docs/overview-light.png)
 ![Overview, dark](docs/overview-dark.png)

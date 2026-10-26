@@ -22,6 +22,15 @@ final class Engine {
         var protect: Protect
         var port: Int
         var serveRunning: Bool
+        var excluded: [Excluded] = []
+    }
+
+    /// A project sent straight to the API, around sotto (`sotto exclude`).
+    struct Excluded: Decodable, Equatable, Identifiable {
+        var path: String
+        var url: String
+        var active: Bool
+        var id: String { path }
     }
 
     private(set) var status: Status?
@@ -113,6 +122,25 @@ final class Engine {
 
     func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
 
+    /// The result of the last exclude or include, for the card to show.
+    var exclusionNote: String?
+
+    func exclude(_ folder: URL) async {
+        await act {
+            let out = try await self.run(["exclude", folder.path])
+            if out.code != 0 { throw EngineError(out.lastLine) }
+            self.exclusionNote = "Excluded. It applies once Claude Code trusts the folder."
+        }
+    }
+
+    func include(_ path: String) async {
+        await act {
+            let out = try await self.run(["include", path])
+            if out.code != 0 { throw EngineError(out.lastLine) }
+            self.exclusionNote = "Scanned again. Restart Claude Code sessions open in that project."
+        }
+    }
+
     // MARK: -
 
     private static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
@@ -178,7 +206,8 @@ final class Engine {
         e.status = Status(model: "~/.local/share/sotto/models/privacy-filter-q8.gguf", modelSize: 1_637_572_192,
                           pfServe: "Sotto.app/Contents/Resources/bin/pf-serve",
                           protect: .init(settings: "~/.claude/settings.json", on: true, baseUrl: "http://127.0.0.1:7788"),
-                          port: 7788, serveRunning: true)
+                          port: 7788, serveRunning: true,
+                          excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)])
         e.serviceStatus = .enabled
         return e
     }

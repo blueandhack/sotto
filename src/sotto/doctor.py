@@ -83,7 +83,11 @@ def run() -> int:
     else:
         _check(r, FAIL, "`claude` not on PATH")
 
+    from .protect import is_excluded
+
     port = cfg.port if cfg else 7788
+    if url := is_excluded(Path.cwd()):
+        _check(r, WARN, f"this project is excluded: Claude Code here goes straight to {url}, unscanned (`sotto include` undoes it)")
     risks = launch.bypass_risks(Path.cwd(), port)
     _check(r, FAIL if risks else OK, "routes around sotto: " + "; ".join(risks) if risks else "nothing routes Claude Code around sotto")
     if cfg and launch.protected(cfg):

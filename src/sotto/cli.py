@@ -90,7 +90,13 @@ def claude(ctx: typer.Context) -> None:
 
     from .launch import PROTECTED_BUT_DOWN, _run_child, bypass_risks, log_to_file, protected, run_claude, shared_serve_port
 
+    from .protect import is_excluded
+
     cfg = _config()
+    if url := is_excluded(Path.cwd()):
+        typer.echo(f"sotto claude: this project is excluded (Claude Code here goes straight to {url}); "
+                   "run `claude`, or `sotto include` to scan it again", err=True)
+        raise typer.Exit(2)
     risks = bypass_risks(Path.cwd(), cfg.port)
     if risks:
         typer.echo("sotto: refusing to start, Claude Code could bypass the proxy:\n  " + "\n  ".join(risks), err=True)
@@ -221,13 +227,51 @@ def protect(
 
 
 @app.command()
+def exclude(
+    path: Path = typer.Argument(None, help="A folder in the project (default: the current folder)."),
+    list_: bool = typer.Option(False, "--list", help="List excluded projects."),
+) -> None:
+    """Let Claude Code in one project skip sotto and go straight to the API. `sotto include` undoes it."""
+    from .protect import ProtectError, excluded_projects
+    from .protect import exclude as do_exclude
+
+    if list_:
+        for p in excluded_projects():
+            typer.echo(f"{p['path']}  -> {p['url']}" + ("" if p["active"] else "  (setting removed: goes through sotto)"))
+        return
+    cfg = _config()
+    try:
+        root = do_exclude(path or Path.cwd(), cfg.upstream)
+    except ProtectError as e:
+        typer.echo(f"sotto exclude: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"excluded {root}: Claude Code there goes straight to {cfg.upstream}, unscanned.\n"
+               "It applies once the folder is trusted in Claude Code; sessions already open there switch now.", err=True)
+
+
+@app.command()
+def include(path: Path = typer.Argument(None, help="A folder in the project (default: the current folder).")) -> None:
+    """Scan an excluded project again."""
+    from .protect import ProtectError
+    from .protect import include as do_include
+
+    try:
+        root = do_include(path or Path.cwd())
+    except ProtectError as e:
+        typer.echo(f"sotto include: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"included {root} again. Restart Claude Code sessions open there: a running session keeps "
+               "going straight to the API until it restarts.", err=True)
+
+
+@app.command()
 def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON (for the Mac app).")) -> None:
     """Setup and service state in one place: model, pf-serve, protection, running proxy."""
     import json
 
     from .detect.pfserve import MODEL_SIZE, find_binary, find_model
     from .launch import shared_serve_port
-    from .protect import ProtectError
+    from .protect import ProtectError, excluded_projects
     from .protect import status as protect_status
 
     cfg = _config()
@@ -237,7 +281,8 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
         prot = {"error": str(e)}
     binary, model = find_binary(), find_model()
     out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
-           "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None}
+           "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None,
+           "excluded": excluded_projects()}
     typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 
 
