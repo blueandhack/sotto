@@ -83,12 +83,18 @@ def run() -> int:
     else:
         _check(r, FAIL, "`claude` not on PATH")
 
-    risks = launch.bypass_risks(Path.cwd())
+    port = cfg.port if cfg else 7788
+    risks = launch.bypass_risks(Path.cwd(), port)
     _check(r, FAIL if risks else OK, "routes around sotto: " + "; ".join(risks) if risks else "nothing routes Claude Code around sotto")
+    if cfg and launch.protected(cfg):
+        up = launch.shared_serve_port(cfg) is not None
+        _check(r, OK if up else FAIL, "protection on: every Claude Code session goes through sotto serve" if up
+               else "protection on, but sotto serve is not running: Claude Code cannot connect")
+    else:
+        _check(r, OK, "protection off: only `sotto claude` and the VS Code wrapper go through sotto")
     if os.environ.get("ANTHROPIC_BASE_URL"):
         _check(r, WARN, "ANTHROPIC_BASE_URL is set: `sotto claude` will use it as its upstream")
 
-    port = cfg.port if cfg else 7788
     with socket.socket() as s:
         free = s.connect_ex(("127.0.0.1", port)) != 0
     try:

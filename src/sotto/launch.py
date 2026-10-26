@@ -33,7 +33,11 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
 
     from . import __version__
 
+    from .protect import is_sotto_url
+
     pii = cfg.pii if pii is None else pii
+    if upstream and is_sotto_url(upstream, cfg.port):
+        upstream = None  # protection points Claude Code at sotto: never forward to ourselves
     pipeline = default_pipeline(pii=pii, rules_only=rules_only,
                                 allow_strings=cfg.allow_strings, allow_patterns=cfg.allow_patterns)
     info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__}
@@ -41,10 +45,14 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
                  stats_token=stats_token(), info=info)
 
 
-def bypass_risks(cwd: Path) -> list[str]:
-    """Places that could route Claude Code around sotto. Any hit means: do not start."""
+def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:
+    """Places that could route Claude Code around sotto. Any hit means: do not start.
+    An ANTHROPIC_BASE_URL pointing at sotto itself on `port` (`sotto protect`) is not a risk."""
+    from .protect import is_sotto_url, settings_path
+
     risks = [f"environment variable {k} is set" for k in BYPASS_KEYS[1:] if os.environ.get(k)]
-    files = [Path.home() / ".claude" / "settings.json", Path.home() / ".claude" / "settings.local.json",
+    user = settings_path()
+    files = [user, user.with_name("settings.local.json"),
              Path("/Library/Application Support/ClaudeCode/managed-settings.json")]
     for d in [cwd, *cwd.parents]:
         files += [d / ".claude" / "settings.json", d / ".claude" / "settings.local.json"]
@@ -53,7 +61,12 @@ def bypass_risks(cwd: Path) -> list[str]:
             env = json.loads(f.read_text()).get("env", {})
         except (OSError, ValueError, AttributeError):
             continue
-        risks += [f"{f} sets env {k}" for k in BYPASS_KEYS if isinstance(env, dict) and k in env]
+        if not isinstance(env, dict):
+            continue
+        for k in BYPASS_KEYS:
+            ours = k == "ANTHROPIC_BASE_URL" and port is not None and is_sotto_url(str(env.get(k)), port)
+            if k in env and not ours:
+                risks.append(f"{f} sets env {k}")
     return risks
 
 
@@ -152,6 +165,20 @@ def _run_child(command: list[str], env: dict[str, str]) -> int:
             signal.signal(sig, handler)
 
 
+PROTECTED_BUT_DOWN = ("protection is on, so Claude Code goes to the sotto service, but it is not running: "
+                      "open Sotto.app or run `sotto serve` (or `sotto protect off`)")
+
+
+def protected(cfg: Config) -> bool:
+    """`sotto protect` is on: Claude Code's settings send every session to `sotto serve`."""
+    from .protect import ProtectError, status
+
+    try:
+        return status(cfg.port).on
+    except ProtectError:
+        return False
+
+
 def shared_serve_port(cfg: Config) -> int | None:
     """The port of a running `sotto serve`, if there is one. It must answer the stats endpoint
     with this user's private token and say it is in serve mode: something else listening on
@@ -188,17 +215,19 @@ def wrap_main() -> int:
     if len(sys.argv) < 2:
         return refuse("usage: sotto-claude-wrapper <claude binary> [args...]")
     command = sys.argv[1:]
-    risks = bypass_risks(Path.cwd())
-    if risks:
-        return refuse("refusing to start, Claude Code could bypass the proxy: " + "; ".join(risks))
     try:
         cfg = load()
     except ConfigError as e:
         return refuse(f"bad config: {e}")
+    risks = bypass_risks(Path.cwd(), cfg.port)
+    if risks:
+        return refuse("refusing to start, Claude Code could bypass the proxy: " + "; ".join(risks))
     log_to_file(cfg.log_level)
     if not os.access(command[0], os.X_OK):
         return refuse(f"cannot run {command[0]}: not an executable file")
     port = shared_serve_port(cfg)
+    if port is None and protected(cfg):
+        return refuse(PROTECTED_BUT_DOWN)
     try:
         if port is not None:
             logging.getLogger("sotto").info("wrapper: using sotto serve on port %d", port)

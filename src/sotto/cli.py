@@ -86,12 +86,26 @@ def claude(ctx: typer.Context) -> None:
     """Start Claude Code with every request scanned. Arguments go to `claude` unchanged."""
     import os
 
-    from .launch import bypass_risks, log_to_file, run_claude
+    import shutil
 
-    risks = bypass_risks(Path.cwd())
+    from .launch import PROTECTED_BUT_DOWN, _run_child, bypass_risks, log_to_file, protected, run_claude, shared_serve_port
+
+    cfg = _config()
+    risks = bypass_risks(Path.cwd(), cfg.port)
     if risks:
         typer.echo("sotto: refusing to start, Claude Code could bypass the proxy:\n  " + "\n  ".join(risks), err=True)
         raise typer.Exit(2)
+    if protected(cfg):
+        # Claude Code's settings send it to the sotto service whatever we set, so use that.
+        port = shared_serve_port(cfg)
+        if port is None:
+            typer.echo(f"sotto claude: {PROTECTED_BUT_DOWN}", err=True)
+            raise typer.Exit(2)
+        if shutil.which("claude") is None:
+            typer.echo("sotto claude: `claude` is not on PATH", err=True)
+            raise typer.Exit(2)
+        raise typer.Exit(_run_child([shutil.which("claude"), *ctx.args],
+                                    {**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}"}))
     # An existing ANTHROPIC_BASE_URL (another gateway) becomes sotto's upstream, never a bypass.
     upstream = os.environ.get("ANTHROPIC_BASE_URL")
     cfg, proxy = _proxy_or_exit(None, False, upstream, "claude")
@@ -110,19 +124,26 @@ def serve(
     upstream: str = typer.Option(None, help="Where scanned requests go (default: config, else api.anthropic.com)."),
     pii: bool = typer.Option(None, "--pii/--no-pii", help="Also mask personal data (default: config)."),
     rules_only: bool = typer.Option(False, help="L1 rules only (lower recall; for debugging)."),
+    log_file: bool = typer.Option(False, help="Log to ~/.config/sotto/sotto.log instead of stderr (for the background service)."),
 ) -> None:
-    """Run the proxy on 127.0.0.1. Point Claude Code at it with ANTHROPIC_BASE_URL."""
+    """Run the proxy on 127.0.0.1. Point Claude Code at it with ANTHROPIC_BASE_URL, or `sotto protect`."""
     import logging
+    import signal
 
-    from .launch import BackgroundServer
+    from .launch import BackgroundServer, log_to_file
 
     cfg, proxy = _proxy_or_exit(pii, rules_only, upstream, "serve")
-    logging.basicConfig(level=cfg.log_level.upper(), format="sotto: %(message)s")
-    # Only sotto decides what is logged: libraries would print URLs and request details.
-    for name in ("httpx", "httpcore", "uvicorn", "uvicorn.error"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    if log_file:
+        log_to_file(cfg.log_level)
+    else:
+        logging.basicConfig(level=cfg.log_level.upper(), format="sotto: %(message)s")
+        # Only sotto decides what is logged: libraries would print URLs and request details.
+        for name in ("httpx", "httpcore", "uvicorn", "uvicorn.error"):
+            logging.getLogger(name).setLevel(logging.WARNING)
     server = BackgroundServer(proxy, port or cfg.port)
     server.start()
+    # launchd stops the service with SIGTERM: shut down cleanly and remove runtime.json.
+    signal.signal(signal.SIGTERM, lambda *_: setattr(server.server, "should_exit", True))
     typer.echo(f"sotto: listening on http://127.0.0.1:{server.port} -> {proxy.upstream}", err=True)
     try:
         server.thread.join()
@@ -168,6 +189,56 @@ def setup() -> None:
     if find_binary() is None:
         typer.echo("pf-serve is not installed yet: run native/pf-serve/build.sh", err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def protect(
+    action: str = typer.Argument("status", help="on, off, or status"),
+    as_json: bool = typer.Option(False, "--json", help="Print status as JSON."),
+) -> None:
+    """Send every Claude Code session through `sotto serve` (on), stop (off), or show which."""
+    import json
+
+    from .protect import ProtectError, disable, enable, status
+
+    cfg = _config()
+    try:
+        st = {"on": enable, "off": disable, "status": status}[action](cfg.port)
+    except KeyError:
+        typer.echo("sotto protect: use on, off or status", err=True)
+        raise typer.Exit(2)
+    except ProtectError as e:
+        typer.echo(f"sotto protect: {e}", err=True)
+        raise typer.Exit(1)
+    if as_json:
+        typer.echo(json.dumps(st.as_dict()))
+    elif st.on:
+        typer.echo(f"on: {st.path} sends Claude Code to http://127.0.0.1:{cfg.port}"
+                   + ("" if action == "status" else "; sessions already running switch over now"), err=True)
+    else:
+        typer.echo(f"off: {st.path} does not route Claude Code through sotto"
+                   + ("; sessions already running keep using sotto until restarted" if action == "off" else ""), err=True)
+
+
+@app.command()
+def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON (for the Mac app).")) -> None:
+    """Setup and service state in one place: model, pf-serve, protection, running proxy."""
+    import json
+
+    from .detect.pfserve import MODEL_SIZE, find_binary, find_model
+    from .launch import shared_serve_port
+    from .protect import ProtectError
+    from .protect import status as protect_status
+
+    cfg = _config()
+    try:
+        prot = protect_status(cfg.port).as_dict()
+    except ProtectError as e:
+        prot = {"error": str(e)}
+    binary, model = find_binary(), find_model()
+    out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
+           "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None}
+    typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 
 
 @app.command()
