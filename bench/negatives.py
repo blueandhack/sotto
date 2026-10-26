@@ -408,3 +408,48 @@ Block 21483907 · gas used 51,234 · status: success"""),
         username: { type: string, example: jdoe }
         password: { type: string, format: password, example: "********", minLength: 12 }"""),
 ]
+
+
+# Held-out set 4, written Oct 26, 2026 after model ACCOUNT spans after a secret keyword became
+# secrets, and before any run on it. Several put a key/token word before an identifier that is
+# not a secret, the case that change could get wrong. `gen.py --negatives holdout4` writes these.
+HOLDOUT4_NEGATIVES = [
+    ("idempotency-key", """POST /v1/refunds HTTP/1.1
+Idempotency-Key: 5d41c7a2-8b3e-4f19-a6d0-2e7c9b1f4a83
+Content-Type: application/json"""),
+    ("cache-key-log", """cache miss: key=user:84213:profile:v3 ttl=300s
+the cache key for this page is a7c3e9f1b5d2 (prefix of the content hash)"""),
+    ("s3-object-key", """Uploaded to s3://acme-reports/2026/10/26/report-7f3a9c2e1b4d.pdf
+Object key: 2026/10/26/report-7f3a9c2e1b4d.pdf, ETag "9b2c4e6a8d0f1a3c5e7b9d2f4a6c8e0b\""""),
+    ("token-usage", """usage: input_tokens=48213 output_tokens=1907 cache_read_input_tokens=46080
+token budget remaining: 151787"""),
+    ("gpg-key-listing", """pub   ed25519 2024-03-11 [SC]
+      9F2C4E6A8D0B1C3E5A7F9D2B4C6E8A0F1D3B5C7E
+uid           [ultimate] Release Signing Key <release@example.com>"""),
+    ("redis-keys", """127.0.0.1:6379> KEYS session:*
+1) "session:8f3e2a1b4c5d"
+2) "session:1a2b3c4d5e6f"
+127.0.0.1:6379> TTL session:8f3e2a1b4c5d
+(integer) 1742"""),
+    ("partition-key", """DynamoDB item: { "pk": "ORDER#7731", "sk": "ITEM#00042", "gsi1pk": "CUSTOMER#c0a8f3e1" }
+partition key ORDER#7731, sort key ITEM#00042"""),
+    ("license-key-placeholder", """# Set your license key in settings:
+LICENSE_KEY=XXXX-XXXX-XXXX-XXXX
+# Trial keys look like TRIAL-0000-0000-0000"""),
+    ("csrf-meta", """<meta name="csrf-param" content="authenticity_token">
+<meta name="csrf-token" content="{{ csrf_token() }}">"""),
+    ("public-key-pin", """Public-Key-Pins: pin-sha256="d6qzRu9zOECb90Uez27xWltNsj0e1Md7GkYYkVoZWmM="; max-age=5184000"""),
+    ("git-blob-ids", """diff --git a/src/app.ts b/src/app.ts
+index 4b825dc642cb6eb9a060e54bf8d69288fbee4904..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391 100644"""),
+    ("lambda-request", """START RequestId: c3f1a9e2-7b4d-4a6c-9e8f-1d2b3c4e5f6a Version: $LATEST
+END RequestId: c3f1a9e2-7b4d-4a6c-9e8f-1d2b3c4e5f6a
+REPORT Duration: 112.48 ms Billed Duration: 113 ms Memory Size: 512 MB"""),
+    ("feature-flag-key", """flag key "checkout_v2_rollout" served variation "on" to user 4f8b2c (rule 3 of 5)
+experiment key exp_2026_q4_pricing, bucket 0.4183"""),
+    ("bazel-output", """INFO: Analyzed target //services/checkout:server (412 packages loaded, 9821 targets configured).
+bazel-out/darwin_arm64-fastbuild/bin/services/checkout/server_/server
+Action cache key: 1c9e7a5b3d2f8e6a4c0b9d7f5e3a1c8b6d4f2a0e9c7b5d3f1a8e6c4b2d0f9e7a"""),
+    ("api-key-docs", """Pass your API key in the X-Api-Key header:
+curl -H "X-Api-Key: $ACME_API_KEY" https://api.example.com/v1/ping
+Keys start with ak_ and are 40 characters long."""),
+]

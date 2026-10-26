@@ -52,6 +52,25 @@ Held-out 3 is new: seed 10 and 15 hand-written hard negatives (`HOLDOUT3_NEGATIV
 
 - The IBAN rule fixes the held-out 2 miss: ACCOUNT recall there is 1.00 (0.92 before).
 - On held-out 3, pf-serve and MLX miss the same two values and flag the same three negatives, so neither gap comes from the runtime:
-  - `secret-046`: "the Datadog key for staging is ‹32 hex› - please rotate it". Refinement drops hex runs unless a keyword sits right before them; here it is a few words earlier.
+  - `secret-046`: "the Datadog key for staging is ‹32 hex› - please rotate it". The model labels the key an account number, so it was dropped as personal data (and kept out by the account-number filter with `pii = true`). Fixed below.
   - A person's name in a commit message (`pii = true`).
   - Flagged: a GitHub Actions SHA pin, AWS `sg-` and `vpc-` IDs, and an Xcode DerivedData folder name.
+
+## Keys the model calls account numbers, and held-out 4
+
+Oct 26, 2026. Raw tables: [`v3-data.md`](v3-data.md), [`v3-holdout.md`](v3-holdout.md), [`v3-holdout2.md`](v3-holdout2.md), [`v3-holdout3.md`](v3-holdout3.md), [`v3-holdout4.md`](v3-holdout4.md).
+
+The change: a model span labeled `account_number` becomes a secret when a secret keyword (key, token, secret, password, …) is in the 40 characters before it, it has a digit, and it is not shaped like card or bank digits. On dev, the first version also flagged the header name `X-API-Key`; the digit condition removed that.
+
+Held-out 4 (seed 11, 15 new hard negatives in `HOLDOUT4_NEGATIVES`) was written after the change and before any run. Several of its negatives put a key or token word before an identifier that is not a secret (idempotency keys, cache keys, S3 object keys, partition keys, token counts), the case this change could get wrong.
+
+| Dataset | Secret recall | Secret precision | Hard negatives flagged | PII recall / precision (`pii = true`) | p95 ≤ 4K tokens |
+| --- | --- | --- | --- | --- | --- |
+| Dev | 0.989 | 0.867 | 1/40 | 0.996 / 0.903 | 102 ms |
+| Held-out 1 | 1.000 | 0.782 | 0/15 | 1.000 / 0.852 | 100 ms |
+| Held-out 2 | 1.000 | 0.803 | 9/15 | 1.000 / 0.879 | 103 ms |
+| Held-out 3 (now tuned on) | 1.000 | 0.869 | 3/15 | 0.996 / 0.928 | 95 ms |
+| **Held-out 4 (fresh)** | **1.000** | **0.845** | **3/15** | **1.000 / 0.900** | **95 ms** |
+
+- Held-out 3's Datadog key is found; nothing new is flagged on any set.
+- On held-out 4, the change itself flags none of the 15 negatives (checked by running them with it off: the same three spans). The three come from refinement that keeps identifiers after a keyword, which predates this: an `Idempotency-Key` UUID, an HTTP public-key pin, and a Bazel action cache key.

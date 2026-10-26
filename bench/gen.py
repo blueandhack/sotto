@@ -7,6 +7,7 @@ real credential. Personal data comes from Faker. Hard negatives are hand-written
     uv run python bench/gen.py --seed 8 --negatives holdout --out /tmp/holdout     # held-out check
     uv run python bench/gen.py --seed 9 --negatives holdout2 --out /tmp/holdout2   # second check
     uv run python bench/gen.py --seed 10 --negatives holdout3 --out /tmp/holdout3  # after pf-serve and IBANs
+    uv run python bench/gen.py --seed 11 --negatives holdout4 --out /tmp/holdout4  # after keyed ACCOUNT spans
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from pathlib import Path
 from faker import Faker
 
 sys.path.insert(0, str(Path(__file__).parent))
-from negatives import HOLDOUT2_NEGATIVES, HOLDOUT3_NEGATIVES, HOLDOUT_NEGATIVES, NEGATIVES  # noqa: E402
+from negatives import HOLDOUT2_NEGATIVES, HOLDOUT3_NEGATIVES, HOLDOUT4_NEGATIVES, HOLDOUT_NEGATIVES, NEGATIVES  # noqa: E402
 
 UPPER, LOWER, DIGITS = string.ascii_uppercase, string.ascii_lowercase, string.digits
 ALNUM = UPPER + LOWER + DIGITS
@@ -445,7 +446,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", type=Path, default=Path(__file__).parent / "data")
-    ap.add_argument("--negatives", choices=["main", "holdout", "holdout2", "holdout3"], default="main",
+    ap.add_argument("--negatives", choices=["main", "holdout", "holdout2", "holdout3", "holdout4"], default="main",
                     help="Which hand-written hard negatives to write (holdout sets were never used for tuning).")
     args = ap.parse_args()
     r = random.Random(args.seed)
@@ -458,7 +459,7 @@ def main() -> None:
         "negatives": [
             {"id": f"neg-{i:03d}", "text": text, "spans": [], "tags": ["negatives", name]}
             for i, (name, text) in enumerate({"main": NEGATIVES, "holdout": HOLDOUT_NEGATIVES, "holdout2": HOLDOUT2_NEGATIVES,
-                                              "holdout3": HOLDOUT3_NEGATIVES}[args.negatives])
+                                              "holdout3": HOLDOUT3_NEGATIVES, "holdout4": HOLDOUT4_NEGATIVES}[args.negatives])
         ],
         "long": gen_long(r, fake, sec, token_counter()),
     }

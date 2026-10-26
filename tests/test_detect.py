@@ -197,6 +197,24 @@ def test_real_assignments_still_caught(rules, text, value):
     assert value in values(text, rules.detect(text))
 
 
+@pytest.mark.parametrize("text, value, masked", [
+    # The model labels an API key in prose an account number: a secret keyword before it makes it a secret.
+    ("Hey, the Datadog key for staging is 3f9a1c7e5b2d8f4a6c0e9b1d3f5a7c2e - please rotate it", "3f9a1c7e5b2d8f4a6c0e9b1d3f5a7c2e", True),
+    ("the auth token is 9Kx2Lm7Qp4Rt8Vw3 for now", "9Kx2Lm7Qp4Rt8Vw3", True),
+    # Card and bank digits stay account numbers, even after a keyword.
+    ("card for the api key billing: 4242 4242 4242 4242", "4242 4242 4242 4242", False),
+    # A header name after `type: apiKey` is not a credential.
+    ("    apiKeyAuth:\n      type: apiKey\n      in: header\n      name: X-API-Key", "X-API-Key", False),
+    # No secret keyword: still an account number (personal data, off by default).
+    ("refund to account 3f9a1c7e5b2d8f4a6c0e9b1d3f5a7c2e please", "3f9a1c7e5b2d8f4a6c0e9b1d3f5a7c2e", False),
+])
+def test_model_account_spans_after_a_secret_keyword_are_secrets(rules, text, value, masked):
+    a = text.index(value)
+    pf = _FakePF([Span(a, a + len(value), "ACCOUNT", 0.9, "pf")])
+    got = values(text, Pipeline(RulesDetector(), pf, pii=False).detect(text))
+    assert (value in got) == masked
+
+
 def test_username_in_a_path_is_not_a_person(rules):
     text = "Working directory: /Users/alex/sotto-test"
     a = text.index("/alex")

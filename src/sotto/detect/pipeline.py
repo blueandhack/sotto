@@ -70,6 +70,8 @@ class Pipeline:
             spans += d.detect(text)
         if self.pf:
             for s in self.pf.detect(text):
+                if s.type == "ACCOUNT" and self.refine and self.credential_not_account(text, s):
+                    s = Span(s.start, s.end, "SECRET", s.confidence, s.source)
                 if s.type != "SECRET" and not (self.pii and not self.pii_detector):
                     continue  # personal data only when enabled
                 candidates += 1
@@ -93,6 +95,16 @@ class Pipeline:
         self.funnel["after_allowlist"] += len(spans)
         self.funnel["masked"] += len(merged)
         return merged
+
+    @staticmethod
+    def credential_not_account(text: str, span: Span) -> bool:
+        """The model sometimes labels an API key in prose an account number ("the Datadog key for
+        staging is 3f9a…"). Not shaped like card or bank digits, with a digit (so not a name such as
+        `X-API-Key`), after a secret keyword: a secret."""
+        value = text[span.start : span.end]
+        before = text[max(0, span.start - 40) : span.start]
+        return (any(c.isdigit() for c in value) and not _ACCOUNT_SHAPE.fullmatch(value)
+                and bool(_KEYWORD_BEFORE.search(before)))
 
     def refine_secret(self, text: str, span: Span) -> list[Span]:
         """Tighten a model SECRET span. The model tends to run spans across neighboring
