@@ -1,4 +1,4 @@
-"""L1: regex rules, Shannon entropy and Luhn checksums."""
+"""L1: regex rules, Shannon entropy, and Luhn and IBAN checksums."""
 
 from __future__ import annotations
 
@@ -65,6 +65,12 @@ def luhn_valid(digits: str) -> bool:
     return total % 10 == 0
 
 
+def iban_valid(iban: str) -> bool:
+    """ISO 13616 mod-97: move the first four characters to the end, letters become 10..35."""
+    s = iban[4:] + iban[:4]
+    return int("".join(str(int(c, 36)) for c in s)) % 97 == 1
+
+
 # '=' only as trailing base64 padding, so `NAME=value` never becomes one candidate.
 _PROSE_WORD = re.compile(r"[a-z]+")
 _PROSE_NEXT = re.compile(r" [a-z]")
@@ -78,6 +84,14 @@ _PUBLIC_PEM = re.compile(r"-----BEGIN (?:PUBLIC KEY|RSA PUBLIC KEY|CERTIFICATE|X
 _CARD = re.compile(r"(?<![\d-])\d(?:[ -]?\d){12,18}(?![\d-])")
 # Issuer prefixes for Visa, Mastercard, Amex, Discover; cuts Luhn-valid noise like timestamps.
 _CARD_IIN = re.compile(r"4|5[1-5]|2[2-7]|3[47]|6(?:011|5)")
+# Country code, check digits, then the account part, compact or in groups of four.
+_IBAN = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?)(?![A-Za-z0-9])")
+# Countries in the SWIFT IBAN registry.
+_IBAN_COUNTRIES = frozenset(
+    "AD AE AL AT AZ BA BE BG BH BI BR BY CH CR CY CZ DE DJ DK DO EE EG ES FI FK FO FR GB GE GI GL GR GT HN HR HU IE IL "
+    "IQ IS IT JO KW KZ LB LC LI LT LU LV LY MC MD ME MK MN MR MT MU NI NL NO OM PK PL PS PT QA RO RS RU SA SC SD SE SI "
+    "SK SM SO ST SV TL TN TR UA VA VG XK YE".split()
+)
 
 
 class RulesDetector:
@@ -111,6 +125,7 @@ class RulesDetector:
         if self.entropy.get("enabled"):
             self._skip_before = re.compile(self.entropy["skip_before"])
         self.luhn = cfg.get("luhn", {"enabled": False})
+        self.iban = cfg.get("iban", {"enabled": False})
 
     def looks_like_placeholder(self, value: str, level: str | bool = "placeholder") -> bool:
         if not level:
@@ -137,6 +152,8 @@ class RulesDetector:
             spans.extend(self._entropy_spans(text))
         if self.luhn.get("enabled"):
             spans.extend(self._card_spans(text))
+        if self.iban.get("enabled"):
+            spans.extend(self._iban_spans(text))
         return self.allowlist.filter(text, spans)
 
     def _entropy_spans(self, text: str) -> list[Span]:
@@ -177,4 +194,12 @@ class RulesDetector:
             digits = re.sub(r"[ -]", "", m.group())
             if 13 <= len(digits) <= 19 and _CARD_IIN.match(digits) and luhn_valid(digits):
                 out.append(Span(m.start(), m.end(), "ACCOUNT", self.luhn["confidence"], f"{SOURCE}:luhn"))
+        return out
+
+    def _iban_spans(self, text: str) -> list[Span]:
+        out = []
+        for m in _IBAN.finditer(text):
+            iban = m.group(1).replace(" ", "")
+            if 15 <= len(iban) <= 34 and iban[:2] in _IBAN_COUNTRIES and iban_valid(iban):
+                out.append(Span(m.start(1), m.end(1), "ACCOUNT", self.iban["confidence"], f"{SOURCE}:iban"))
         return out

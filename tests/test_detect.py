@@ -8,7 +8,7 @@ from sotto.detect import Span
 from sotto.detect.merge import merge
 from sotto.detect.pf import BIOESDecoder
 from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector, luhn_valid
+from sotto.detect.rules import RulesDetector, iban_valid, luhn_valid
 
 # Synthetic values only: random strings in provider formats, never real credentials.
 FAKE_GITHUB = "ghp_" + "Zq8vX2mN4pL7kR9tY3wB6cF1hJ5dG0sAe7Qw"
@@ -53,6 +53,33 @@ def test_hard_negatives(rules, text):
 def test_luhn():
     assert luhn_valid("4242424242424242")
     assert not luhn_valid("4242424242424241")
+
+
+# The example IBANs from the ISO 13616 and national bank documentation.
+@pytest.mark.parametrize("iban", ["GB82WEST12345698765432", "DE89370400440532013000", "FR1420041010050500013M02606",
+                                  "NL91ABNA0417164300", "NO9386011117947"])
+def test_iban_checksum(iban):
+    assert iban_valid(iban)
+    assert not iban_valid(iban[:2] + f"{(int(iban[2:4]) + 1) % 100:02d}" + iban[4:])
+
+
+@pytest.mark.parametrize("text, found", [
+    ("refund to GB82WEST12345698765432 please", "GB82WEST12345698765432"),
+    ("IBAN: GB82 WEST 1234 5698 7654 32.", "GB82 WEST 1234 5698 7654 32"),
+    ("Konto DE89 3704 0044 0532 0130 00, bitte", "DE89 3704 0044 0532 0130 00"),
+    ("refund to GB83WEST12345698765432 please", None),  # wrong check digits
+    ("ref ZZ82WEST12345698765432", None),  # no such country
+    ("id=xGB82WEST12345698765432", None),  # part of a longer token
+])
+def test_iban_rule(rules, text, found):
+    got = [text[s.start:s.end] for s in rules.detect(text) if s.source == "rules:iban"]
+    assert got == ([found] if found else [])
+
+
+def test_iban_is_personal_data(rules):
+    text = "refund to GB82WEST12345698765432 please"
+    assert Pipeline(rules, None, pii=False).detect(text) == []
+    assert values(text, Pipeline(rules, None, pii=True).detect(text)) == ["GB82WEST12345698765432"]
 
 
 def test_merge_keeps_widest_span_and_highest_priority_type():

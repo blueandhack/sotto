@@ -54,6 +54,10 @@ skip_before = '''(?i)(?:sha(?:1|224|256|384|512)[-:=]|md5[-:=]|integrity|checksu
 enabled = true
 confidence = 0.9
 
+[iban]
+enabled = true
+confidence = 0.9
+
 # --- Private keys and tokens with a fixed structure ------------------------------
 
 [[rule]]
