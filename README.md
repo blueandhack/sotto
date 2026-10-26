@@ -37,6 +37,12 @@ Claude Code ──▶ sotto (on your Mac) ──▶ Anthropic API
 
 ## Install
 
+### The Mac app (everything included)
+
+Build `Sotto.app` (see [mac/README.md](mac/README.md)), open it, and follow **Settings › Setup**: download the model, start the background service, and switch on **Protect Claude Code**. The app bundles sotto, its Python runtime and pf-serve; nothing else needs installing. Every Claude Code session then goes through sotto: terminal, VS Code and the desktop app.
+
+### The command line
+
 ```sh
 git clone https://github.com/blueandhack/sotto.git && cd sotto
 uv tool install --editable .                # installs `sotto` and `sotto-claude-wrapper`
@@ -64,11 +70,14 @@ Add this to your VS Code settings (JSON), then reload the window:
 
 Each conversation then starts through sotto. If `sotto serve` is running, every conversation shares it (one model in memory); otherwise each conversation starts its own proxy.
 
-### As a background proxy
+### As a background proxy, for every session
 
 ```sh
-sotto serve           # http://127.0.0.1:7788; point clients at it with ANTHROPIC_BASE_URL
+sotto serve           # http://127.0.0.1:7788
+sotto protect on      # Claude Code's user settings now send every session to it; `sotto protect off` undoes it
 ```
+
+`sotto protect` changes one key, `env.ANTHROPIC_BASE_URL`, in `~/.claude/settings.json`, and keeps a backup next to it. Sessions already running switch over when it is turned on; turning it off reaches only sessions started afterwards. While it is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
 ### Scan files (pre-commit)
 
@@ -115,7 +124,7 @@ sotto makes no network calls except the request it forwards, and `sotto setup`'s
 
 ## Mac app
 
-A menu-bar app with a dashboard: a live flow map of where each request goes, request and detection funnels, masked values by type, scan latency, and recent activity, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
+A menu-bar app that sets sotto up and runs it in the background, with a dashboard: a live flow map of where each request goes, request and detection funnels, masked values by type, scan latency, and recent activity, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
 
 ## Accuracy and speed
 

@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct SottoApp: App {
     @State private var store = StatsStore()
+    @State private var engine = Engine()
 
     init() {
         Snapshotter.runIfRequested()
@@ -11,16 +12,16 @@ struct SottoApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuPanel(store: store)
+            MenuPanel(store: store, engine: engine)
         } label: {
-            MenuLabel(store: store)
+            MenuLabel(store: store, engine: engine)
         }
         .menuBarExtraStyle(.window)
 
         Window("sotto", id: "dashboard") {
-            Dashboard(store: store)
+            Dashboard(store: store, engine: engine)
                 .frame(minWidth: 1100, minHeight: 720)
-                .onAppear { store.start() }
+                .onAppear { store.start(); engine.start() }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 780)
@@ -29,6 +30,7 @@ struct SottoApp: App {
 
 struct MenuLabel: View {
     var store: StatsStore
+    var engine: Engine
 
     var body: some View {
         let unique = store.snapshot.vaultSize ?? 0
@@ -36,12 +38,13 @@ struct MenuLabel: View {
             Image(nsImage: store.connection == .live || store.connection == .sample ? Brand.menuBarActive : Brand.menuBarIdle)
             if unique > 0 { Text(unique.compact).monospacedDigit() }
         }
-        .task { store.start() }
+        .task { store.start(); engine.start() }
     }
 }
 
 struct MenuPanel: View {
     @Bindable var store: StatsStore
+    var engine: Engine
     @AppStorage("appearance") private var appearance: Appearance = .system
     @Environment(\.openWindow) private var openWindow
 
@@ -67,8 +70,14 @@ struct MenuPanel: View {
             }
             .padding(.vertical, 12)
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.faint))
+            ProtectionRow(engine: engine) {
+                engine.settingsRequested = true
+                openWindow(id: "dashboard")
+                NSApp.activate()
+            }
             if case .offline(let reason) = store.connection {
-                Text("\(reason). Run sotto claude to start.").font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
+                Text("\(reason). \(engine.isBundled ? "Start the background service in Setup." : "Run sotto claude to start.")")
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
             }
             HStack(spacing: 8) {
                 PillButton(title: "Open dashboard", icon: "macwindow", prominent: true) {
@@ -84,6 +93,7 @@ struct MenuPanel: View {
         }
         .padding(16)
         .frame(width: 330)
+        .task { await engine.refresh() }
         .background(Theme.background)
         .preferredColorScheme(appearance.scheme)
     }
@@ -146,14 +156,14 @@ enum Snapshotter {
             }
         }
         for dark in [false, true] {
-            render(MenuPanel(store: store), to: "\(dir)/menu-\(dark ? "dark" : "light").png", dark: dark)
+            render(MenuPanel(store: store, engine: .preview()), to: "\(dir)/menu-\(dark ? "dark" : "light").png", dark: dark)
         }
         exit(0)
     }
 
     /// The dashboard at its default window size: what fits without scrolling is what you see.
     private static func window(_ store: StatsStore, _ page: Page) -> some View {
-        Dashboard(store: store, page: page).frame(width: 1200, height: 780)
+        Dashboard(store: store, engine: .preview(), page: page).frame(width: 1200, height: 780)
     }
 
     private static func render(_ view: some View, to path: String, dark: Bool, scale: CGFloat = 2) {

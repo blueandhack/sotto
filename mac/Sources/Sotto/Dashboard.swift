@@ -17,6 +17,7 @@ enum Page: String, CaseIterable, Identifiable {
 
 struct Dashboard: View {
     @Bindable var store: StatsStore
+    @Bindable var engine: Engine
     @AppStorage("appearance") private var appearance: Appearance = .system
     @State var page: Page = .overview
 
@@ -30,7 +31,7 @@ struct Dashboard: View {
                 case .activity: ActivityPage(store: store)
                 case .detection: DetectionPage(store: store)
                 case .performance: PerformancePage(store: store)
-                case .settings: SettingsPage(store: store, appearance: $appearance)
+                case .settings: SettingsPage(store: store, engine: engine, appearance: $appearance)
                 }
             }
             .padding(24)
@@ -38,6 +39,9 @@ struct Dashboard: View {
         }
         .background(Theme.background)
         .preferredColorScheme(appearance.scheme)
+        .onChange(of: engine.settingsRequested, initial: true) { _, requested in
+            if requested { page = .settings; engine.settingsRequested = false }
+        }
     }
 }
 
@@ -143,9 +147,9 @@ struct OfflineBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "bolt.horizontal.circle").foregroundStyle(Theme.danger)
-            Text("\(reason). Run ").foregroundStyle(Theme.text)
+            Text("\(reason). Start the background service in Settings, or run ").foregroundStyle(Theme.text)
                 + Text("sotto claude").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Theme.accent)
-                + Text(" to see live data, or use Preview.").foregroundStyle(Theme.text)
+                + Text(", to see live data.").foregroundStyle(Theme.text)
             Spacer()
         }
         .font(.system(size: 12.5))
@@ -287,14 +291,17 @@ struct PerformancePage: View {
 
 struct SettingsPage: View {
     var store: StatsStore
+    var engine: Engine
     @Binding var appearance: Appearance
 
     var body: some View {
         let s = store.snapshot
         VStack(spacing: 16) {
-            PageHeader(title: "Settings", subtitle: "Appearance and connection") { EmptyView() }
+            PageHeader(title: "Settings", subtitle: "Setup, appearance and connection") { EmptyView() }
             HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 12) {
+                    SetupCard(engine: engine)
+                        .fixedSize(horizontal: false, vertical: true)
                     Card(title: "Appearance") {
                         Segmented(options: Appearance.allCases.map { ($0, $0.title) }, selection: $appearance)
                     }

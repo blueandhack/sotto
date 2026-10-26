@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build build/Sotto.app: release binary, Info.plist, icon, code signature.
+# Build build/Sotto.app: release binary, Info.plist, icon, the bundled engine (bundle-runtime.sh), code signature.
+#   SKIP_RUNTIME=1 ./build-app.sh   the dashboard alone, without the engine (faster, for UI work)
 #   SIGN_IDENTITY="Developer ID Application: ..." ./build-app.sh   (default: first Apple Development identity, else ad-hoc)
 #   BUNDLE_ID=com.example.sotto ./build-app.sh
 set -euo pipefail
@@ -37,12 +38,24 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+if [ -z "${SKIP_RUNTIME:-}" ]; then
+  BUNDLE_ID=$BUNDLE_ID ./bundle-runtime.sh "$APP"
+fi
+
 IDENTITY=${SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')}
+SIGN=(--force --sign "${IDENTITY:--}")
 if [ -n "$IDENTITY" ]; then
-  codesign --force --options runtime --sign "$IDENTITY" "$APP"
+  SIGN+=(--options runtime)
+  case $IDENTITY in "Developer ID"*) SIGN+=(--timestamp) ;; esac
 else
   echo "no signing identity found; signing ad-hoc" >&2
-  codesign --force --sign - "$APP"
 fi
-codesign --verify --strict "$APP"
+# Nested code first (every Mach-O in the engine), then the app, which seals the rest.
+if [ -d "$APP/Contents/Resources/python" ]; then
+  find "$APP/Contents/Resources" -type f -print0 | while IFS= read -r -d '' f; do
+    if file -b "$f" | grep -q Mach-O; then codesign "${SIGN[@]}" "$f"; fi
+  done
+fi
+codesign "${SIGN[@]}" "$APP"
+codesign --verify --strict --deep "$APP"
 echo "built $APP, signed by: $(codesign -dv --verbose=2 "$APP" 2>&1 | awk -F= '/^Authority/ {print $2; exit}')"
