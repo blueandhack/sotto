@@ -35,7 +35,7 @@ SCOPES = ("secrets", "all")
 
 
 def make_detector(spec: str):
-    """`rules`, `pf[-8bit|-torch]`, `afm-cli`, `afm-sdk`, or a pipeline such as `rules+pf-8bit:pii`.
+    """`rules`, `pf[-8bit|-torch|-serve]`, `afm-cli`, `afm-sdk`, or a pipeline such as `rules+pf-8bit:pii`.
 
     Pipeline flags, each after a `:`: `pii` enables personal data, `raw` skips L2 secret-span refinement,
     `rawpii` skips personal-data refinement. `piiranha` in a pipeline replaces pf for personal data.
@@ -51,6 +51,10 @@ def make_detector(spec: str):
             from .detect.pf import PrivacyFilter
 
             return PrivacyFilter("mlx", model="OpenMed/privacy-filter-nemotron", name="pf-nemotron")
+        if name == "pf-serve":
+            from .detect.pfserve import PfServe
+
+            return PfServe(os.environ["SOTTO_PF_SERVE"], os.environ["SOTTO_PF_MODEL"])
         if name.startswith("pf"):
             from .detect.pf import PrivacyFilter
 
