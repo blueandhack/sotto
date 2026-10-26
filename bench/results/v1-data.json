@@ -1,0 +1,3753 @@
+{
+  "created": "20261025-152557",
+  "environment": {
+    "chip": "Apple M5 Pro",
+    "memory_gb": 64,
+    "macos": "27.0.1",
+    "python": "3.12.0",
+    "packages": {
+      "mlx": "0.32.4",
+      "mlx-embeddings": "0.1.1",
+      "torch": "2.14.1",
+      "transformers": "5.20.2",
+      "apple-fm-sdk": "0.2.1",
+      "tokenizers": "0.23.3"
+    }
+  },
+  "dataset": {
+    "tokenizer": "o200k (Privacy Filter tokenizer)",
+    "groups": {
+      "long": {
+        "records": 20,
+        "spans": 70,
+        "tokens_min": 785,
+        "tokens_max": 7793
+      },
+      "negatives": {
+        "records": 40,
+        "spans": 0,
+        "tokens_min": 23,
+        "tokens_max": 273
+      },
+      "pii": {
+        "records": 40,
+        "spans": 120,
+        "tokens_min": 29,
+        "tokens_max": 72
+      },
+      "secrets": {
+        "records": 50,
+        "spans": 65,
+        "tokens_min": 24,
+        "tokens_max": 1131
+      }
+    }
+  },
+  "settings": {
+    "repeat": 3,
+    "min_overlap": 0.5,
+    "targets": {
+      "secret_recall": 0.98,
+      "negative_fp_rate": 0.05,
+      "p95_ms_le_4k": 150.0
+    }
+  },
+  "detectors": {
+    "rules": {
+      "scopes": {
+        "secrets": {
+          "types": {
+            "*": {
+              "gold": 95,
+              "pred": 225,
+              "recall": 0.968421052631579,
+              "full_cover": 0.968421052631579,
+              "precision": 1.0,
+              "f1": 0.983957219251337
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 225,
+              "recall": 0.968421052631579,
+              "full_cover": 0.968421052631579,
+              "precision": 1.0,
+              "f1": 0.983957219251337
+            }
+          },
+          "recall_by_size": {
+            "1k": 1.0,
+            "4k": 1.0,
+            "8k": 1.0,
+            "short": 0.9538461538461539
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 0,
+            "spans": 0,
+            "fp_rate": 0.0
+          },
+          "misses": [
+            {
+              "id": "secret-046",
+              "tags": [
+                "contextual",
+                "hex"
+              ],
+              "type": "SECRET",
+              "preview": "b871\u2026 (32 chars)"
+            },
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            },
+            {
+              "id": "secret-048",
+              "tags": [
+                "contextual",
+                "cli-flag"
+              ],
+              "type": "SECRET",
+              "preview": "m1v9\u2026 (40 chars)"
+            }
+          ],
+          "false_positives": []
+        },
+        "all": {
+          "types": {
+            "*": {
+              "gold": 255,
+              "pred": 233,
+              "recall": 0.39215686274509803,
+              "full_cover": 0.39215686274509803,
+              "precision": 1.0,
+              "f1": 0.5633802816901409
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 225,
+              "recall": 0.968421052631579,
+              "full_cover": 0.968421052631579,
+              "precision": 1.0,
+              "f1": 0.983957219251337
+            },
+            "ACCOUNT": {
+              "gold": 12,
+              "pred": 8,
+              "recall": 0.6666666666666666,
+              "full_cover": 0.6666666666666666,
+              "precision": 1.0,
+              "f1": 0.8
+            },
+            "PERSON": {
+              "gold": 56,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "EMAIL": {
+              "gold": 56,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "PHONE": {
+              "gold": 16,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "ADDRESS": {
+              "gold": 8,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "URL": {
+              "gold": 4,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "DATE": {
+              "gold": 8,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            }
+          },
+          "recall_by_size": {
+            "1k": 0.3103448275862069,
+            "4k": 0.5,
+            "8k": 0.5238095238095238,
+            "short": 0.3783783783783784
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 0,
+            "spans": 0,
+            "fp_rate": 0.0
+          },
+          "misses": [
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Juli\u2026 (13 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "juli\u2026 (27 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Eliz\u2026 (14 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "eliz\u2026 (25 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Benj\u2026 (14 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "benj\u2026 (24 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Evan\u2026 (10 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "evan\u2026 (21 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Marg\u2026 (19 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "marg\u2026 (29 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Jenn\u2026 (16 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "jenn\u2026 (28 chars)"
+            },
+            {
+              "id": "long-003",
+              "tags": [
+                "size:1k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Keit\u2026 (11 chars)"
+            },
+            {
+              "id": "long-003",
+              "tags": [
+                "size:1k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "keit\u2026 (23 chars)"
+            },
+            {
+              "id": "long-004",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Katr\u2026 (15 chars)"
+            },
+            {
+              "id": "long-004",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "katr\u2026 (25 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Mich\u2026 (16 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "mich\u2026 (29 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Robe\u2026 (11 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "robe\u2026 (21 chars)"
+            },
+            {
+              "id": "long-007",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Juli\u2026 (15 chars)"
+            },
+            {
+              "id": "long-007",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "juli\u2026 (28 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Will\u2026 (14 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "will\u2026 (24 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Samu\u2026 (13 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "samu\u2026 (25 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Hale\u2026 (12 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "hale\u2026 (22 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Kath\u2026 (15 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "kath\u2026 (30 chars)"
+            },
+            {
+              "id": "long-015",
+              "tags": [
+                "size:8k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Brit\u2026 (17 chars)"
+            },
+            {
+              "id": "long-015",
+              "tags": [
+                "size:8k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "brit\u2026 (31 chars)"
+            },
+            {
+              "id": "long-016",
+              "tags": [
+                "size:8k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Sara\u2026 (13 chars)"
+            },
+            {
+              "id": "long-016",
+              "tags": [
+                "size:8k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "sara\u2026 (24 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Char\u2026 (13 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "char\u2026 (26 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Ryan\u2026 (11 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "ryan\u2026 (22 chars)"
+            },
+            {
+              "id": "long-018",
+              "tags": [
+                "size:8k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Jame\u2026 (11 chars)"
+            },
+            {
+              "id": "long-018",
+              "tags": [
+                "size:8k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "jame\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-000",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Mari\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-000",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "mari\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-001",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Debr\u2026 (11 chars)"
+            },
+            {
+              "id": "pii-001",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "debr\u2026 (26 chars)"
+            },
+            {
+              "id": "pii-002",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "bria\u2026 (26 chars)"
+            },
+            {
+              "id": "pii-002",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+1 5\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Benj\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "benj\u2026 (29 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "03/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "609 \u2026 (41 chars)"
+            },
+            {
+              "id": "pii-004",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Ange\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-004",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "ange\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Conn\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "conn\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "276-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Anne\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "anne\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Tyle\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "(237\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB45\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Chel\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (45 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "5276\u2026 (49 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Shir\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "shir\u2026 (24 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "1987\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-009",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "debo\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-010",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Joan\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-010",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "joan\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-011",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Sabr\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-011",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "sabr\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-012",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-012",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Russ\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "russ\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "1990\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "632 \u2026 (48 chars)"
+            },
+            {
+              "id": "pii-014",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Aman\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-014",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "aman\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Cynt\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "cynt\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "945-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Carl\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "carl\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Fran\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "345-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB83\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Mich\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (48 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "7741\u2026 (62 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Hann\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "hann\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "July\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-019",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-020",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Jodi\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-020",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "jodi\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-021",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Zach\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-021",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "zach\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-022",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (24 chars)"
+            },
+            {
+              "id": "pii-022",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+1 8\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Heat\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "heat\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "12/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "1313\u2026 (55 chars)"
+            },
+            {
+              "id": "pii-024",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Chri\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-024",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (31 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Vict\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "vict\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+1 8\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Brit\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "brit\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "939-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Dian\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB59\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Jaso\u2026 (11 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (43 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "8620\u2026 (49 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Kimb\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "kimb\u2026 (32 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "09/1\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-029",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-030",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Shan\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-030",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "shan\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-031",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Patr\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-031",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "patr\u2026 (29 chars)"
+            },
+            {
+              "id": "pii-032",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "cath\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-032",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "393-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Josh\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "09/0\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "848 \u2026 (37 chars)"
+            },
+            {
+              "id": "pii-034",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Emil\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-034",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "emil\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Fran\u2026 (19 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "fran\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Jeff\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "jeff\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+1 2\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Virg\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "(743\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB88\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Susa\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (47 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "1440\u2026 (44 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Aman\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "aman\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "12/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-039",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "laur\u2026 (27 chars)"
+            },
+            {
+              "id": "secret-046",
+              "tags": [
+                "contextual",
+                "hex"
+              ],
+              "type": "SECRET",
+              "preview": "b871\u2026 (32 chars)"
+            },
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            },
+            {
+              "id": "secret-048",
+              "tags": [
+                "contextual",
+                "cli-flag"
+              ],
+              "type": "SECRET",
+              "preview": "m1v9\u2026 (40 chars)"
+            }
+          ],
+          "false_positives": []
+        }
+      },
+      "latency": {
+        "1k": {
+          "n": 21,
+          "p50": 0.8912500052247196,
+          "p95": 1.7603749874979258,
+          "max": 1.787792018149048
+        },
+        "all": {
+          "n": 450,
+          "p50": 0.02860400127246976,
+          "p95": 3.712658467702565,
+          "max": 7.3593329871073365
+        },
+        "4k": {
+          "n": 21,
+          "p50": 3.6635420110542327,
+          "p95": 4.125999985262752,
+          "max": 4.1592500056140125
+        },
+        "8k": {
+          "n": 18,
+          "p50": 7.1823750040493906,
+          "p95": 7.307873159879819,
+          "max": 7.3593329871073365
+        },
+        "short": {
+          "n": 390,
+          "p50": 0.021708503481931984,
+          "p95": 0.33902224531630015,
+          "max": 1.660959009313956
+        }
+      },
+      "tokens_per_s": 1162934.6510036984,
+      "cold_start_s": 0.03920698165893555,
+      "load_s": 0.0036801249952986836,
+      "first_call_ms": 0.06304099224507809,
+      "peak_rss_mb": 28.421875,
+      "peak_rss_children_mb": 0.0,
+      "mlx_peak_mb": null,
+      "stats": {},
+      "checks": {
+        "secret_recall": [
+          0.968421052631579,
+          false
+        ],
+        "negative_fp_rate": [
+          0.0,
+          true
+        ],
+        "p95_le_4k_ms": [
+          4.125999985262752,
+          true
+        ]
+      }
+    },
+    "rules+pf-8bit": {
+      "scopes": {
+        "secrets": {
+          "types": {
+            "*": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8504672897196262,
+              "f1": 0.9147195637063573
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8504672897196262,
+              "f1": 0.9147195637063573
+            }
+          },
+          "recall_by_size": {
+            "1k": 1.0,
+            "4k": 1.0,
+            "8k": 1.0,
+            "short": 0.9846153846153847
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 1,
+            "spans": 1,
+            "fp_rate": 0.025
+          },
+          "misses": [
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            }
+          ],
+          "false_positives": [
+            {
+              "id": "long-010",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-011",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-016",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-018",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-019",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "neg-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "eyJv\u2026 (76 chars)"
+            },
+            {
+              "id": "secret-035",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "yCd5\u2026 (45 chars)"
+            },
+            {
+              "id": "secret-036",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "LtW!\u2026 (57 chars)"
+            },
+            {
+              "id": "secret-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": ".cI%\u2026 (67 chars)"
+            }
+          ]
+        },
+        "all": {
+          "types": {
+            "*": {
+              "gold": 255,
+              "pred": 107,
+              "recall": 0.3686274509803922,
+              "full_cover": 0.3686274509803922,
+              "precision": 0.8504672897196262,
+              "f1": 0.5143252262273397
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8504672897196262,
+              "f1": 0.9147195637063573
+            },
+            "ACCOUNT": {
+              "gold": 12,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "PERSON": {
+              "gold": 56,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "EMAIL": {
+              "gold": 56,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "PHONE": {
+              "gold": 16,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "ADDRESS": {
+              "gold": 8,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "URL": {
+              "gold": 4,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            },
+            "DATE": {
+              "gold": 8,
+              "pred": 0,
+              "recall": 0.0,
+              "full_cover": 0.0,
+              "precision": null,
+              "f1": null
+            }
+          },
+          "recall_by_size": {
+            "1k": 0.3103448275862069,
+            "4k": 0.5,
+            "8k": 0.5238095238095238,
+            "short": 0.34594594594594597
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 1,
+            "spans": 1,
+            "fp_rate": 0.025
+          },
+          "misses": [
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Juli\u2026 (13 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "juli\u2026 (27 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Eliz\u2026 (14 chars)"
+            },
+            {
+              "id": "long-000",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "eliz\u2026 (25 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Benj\u2026 (14 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "benj\u2026 (24 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Evan\u2026 (10 chars)"
+            },
+            {
+              "id": "long-001",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "evan\u2026 (21 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Marg\u2026 (19 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "marg\u2026 (29 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Jenn\u2026 (16 chars)"
+            },
+            {
+              "id": "long-002",
+              "tags": [
+                "size:1k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "jenn\u2026 (28 chars)"
+            },
+            {
+              "id": "long-003",
+              "tags": [
+                "size:1k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Keit\u2026 (11 chars)"
+            },
+            {
+              "id": "long-003",
+              "tags": [
+                "size:1k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "keit\u2026 (23 chars)"
+            },
+            {
+              "id": "long-004",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Katr\u2026 (15 chars)"
+            },
+            {
+              "id": "long-004",
+              "tags": [
+                "size:1k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "katr\u2026 (25 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Mich\u2026 (16 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "mich\u2026 (29 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Robe\u2026 (11 chars)"
+            },
+            {
+              "id": "long-005",
+              "tags": [
+                "size:1k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "robe\u2026 (21 chars)"
+            },
+            {
+              "id": "long-007",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Juli\u2026 (15 chars)"
+            },
+            {
+              "id": "long-007",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "juli\u2026 (28 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Will\u2026 (14 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "will\u2026 (24 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Samu\u2026 (13 chars)"
+            },
+            {
+              "id": "long-009",
+              "tags": [
+                "size:4k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "samu\u2026 (25 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Hale\u2026 (12 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "hale\u2026 (22 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Kath\u2026 (15 chars)"
+            },
+            {
+              "id": "long-011",
+              "tags": [
+                "size:4k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "kath\u2026 (30 chars)"
+            },
+            {
+              "id": "long-015",
+              "tags": [
+                "size:8k",
+                "secrets:3"
+              ],
+              "type": "PERSON",
+              "preview": "Brit\u2026 (17 chars)"
+            },
+            {
+              "id": "long-015",
+              "tags": [
+                "size:8k",
+                "secrets:3"
+              ],
+              "type": "EMAIL",
+              "preview": "brit\u2026 (31 chars)"
+            },
+            {
+              "id": "long-016",
+              "tags": [
+                "size:8k",
+                "secrets:0"
+              ],
+              "type": "PERSON",
+              "preview": "Sara\u2026 (13 chars)"
+            },
+            {
+              "id": "long-016",
+              "tags": [
+                "size:8k",
+                "secrets:0"
+              ],
+              "type": "EMAIL",
+              "preview": "sara\u2026 (24 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Char\u2026 (13 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "char\u2026 (26 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "PERSON",
+              "preview": "Ryan\u2026 (11 chars)"
+            },
+            {
+              "id": "long-017",
+              "tags": [
+                "size:8k",
+                "secrets:1"
+              ],
+              "type": "EMAIL",
+              "preview": "ryan\u2026 (22 chars)"
+            },
+            {
+              "id": "long-018",
+              "tags": [
+                "size:8k",
+                "secrets:2"
+              ],
+              "type": "PERSON",
+              "preview": "Jame\u2026 (11 chars)"
+            },
+            {
+              "id": "long-018",
+              "tags": [
+                "size:8k",
+                "secrets:2"
+              ],
+              "type": "EMAIL",
+              "preview": "jame\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-000",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Mari\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-000",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "mari\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-001",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Debr\u2026 (11 chars)"
+            },
+            {
+              "id": "pii-001",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "debr\u2026 (26 chars)"
+            },
+            {
+              "id": "pii-002",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "bria\u2026 (26 chars)"
+            },
+            {
+              "id": "pii-002",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+1 5\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Benj\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "benj\u2026 (29 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "03/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-003",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "609 \u2026 (41 chars)"
+            },
+            {
+              "id": "pii-004",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Ange\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-004",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "ange\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-004",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "ACCOUNT",
+              "preview": "3728\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Conn\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "conn\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "276-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Anne\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "anne\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-005",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Tyle\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "(237\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-006",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB45\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Chel\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (45 chars)"
+            },
+            {
+              "id": "pii-007",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "5276\u2026 (49 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Shir\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "shir\u2026 (24 chars)"
+            },
+            {
+              "id": "pii-008",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "1987\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-009",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "debo\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-009",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "ACCOUNT",
+              "preview": "4465\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-010",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Joan\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-010",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "joan\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-011",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Sabr\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-011",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "sabr\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-012",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-012",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Russ\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "russ\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "1990\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-013",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "632 \u2026 (48 chars)"
+            },
+            {
+              "id": "pii-014",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Aman\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-014",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "aman\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-014",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "ACCOUNT",
+              "preview": "2272\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Cynt\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "cynt\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "945-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Carl\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "carl\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-015",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Fran\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "345-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-016",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB83\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Mich\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (48 chars)"
+            },
+            {
+              "id": "pii-017",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "7741\u2026 (62 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Hann\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "hann\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-018",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "July\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-019",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-019",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "ACCOUNT",
+              "preview": "3725\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-020",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Jodi\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-020",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "jodi\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-021",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Zach\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-021",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "zach\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-022",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (24 chars)"
+            },
+            {
+              "id": "pii-022",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "+1 8\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Heat\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "heat\u2026 (23 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "12/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-023",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "1313\u2026 (55 chars)"
+            },
+            {
+              "id": "pii-024",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Chri\u2026 (20 chars)"
+            },
+            {
+              "id": "pii-024",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (31 chars)"
+            },
+            {
+              "id": "pii-024",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "ACCOUNT",
+              "preview": "3737\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Vict\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "vict\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+1 8\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Brit\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "brit\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-025",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "939-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Dian\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-026",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB59\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Jaso\u2026 (11 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (43 chars)"
+            },
+            {
+              "id": "pii-027",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "8620\u2026 (49 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Kimb\u2026 (17 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "kimb\u2026 (32 chars)"
+            },
+            {
+              "id": "pii-028",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "09/1\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-029",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "chri\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-029",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "ACCOUNT",
+              "preview": "4588\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-030",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "PERSON",
+              "preview": "Shan\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-030",
+              "tags": [
+                "ctx:comment"
+              ],
+              "type": "EMAIL",
+              "preview": "shan\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-031",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "PERSON",
+              "preview": "Patr\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-031",
+              "tags": [
+                "ctx:commit"
+              ],
+              "type": "EMAIL",
+              "preview": "patr\u2026 (29 chars)"
+            },
+            {
+              "id": "pii-032",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "EMAIL",
+              "preview": "cath\u2026 (28 chars)"
+            },
+            {
+              "id": "pii-032",
+              "tags": [
+                "ctx:log"
+              ],
+              "type": "PHONE",
+              "preview": "393-\u2026 (12 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "PERSON",
+              "preview": "Josh\u2026 (13 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "EMAIL",
+              "preview": "josh\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "DATE",
+              "preview": "09/0\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-033",
+              "tags": [
+                "ctx:json"
+              ],
+              "type": "ADDRESS",
+              "preview": "848 \u2026 (37 chars)"
+            },
+            {
+              "id": "pii-034",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "PERSON",
+              "preview": "Emil\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-034",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "EMAIL",
+              "preview": "emil\u2026 (25 chars)"
+            },
+            {
+              "id": "pii-034",
+              "tags": [
+                "ctx:sql"
+              ],
+              "type": "ACCOUNT",
+              "preview": "3441\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Fran\u2026 (19 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "fran\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+44 \u2026 (15 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PERSON",
+              "preview": "Jeff\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "EMAIL",
+              "preview": "jeff\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-035",
+              "tags": [
+                "ctx:csv"
+              ],
+              "type": "PHONE",
+              "preview": "+1 2\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PERSON",
+              "preview": "Virg\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "PHONE",
+              "preview": "(743\u2026 (14 chars)"
+            },
+            {
+              "id": "pii-036",
+              "tags": [
+                "ctx:ticket"
+              ],
+              "type": "ACCOUNT",
+              "preview": "GB88\u2026 (22 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "PERSON",
+              "preview": "Susa\u2026 (15 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "URL",
+              "preview": "http\u2026 (47 chars)"
+            },
+            {
+              "id": "pii-037",
+              "tags": [
+                "ctx:yaml"
+              ],
+              "type": "ADDRESS",
+              "preview": "1440\u2026 (44 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "PERSON",
+              "preview": "Aman\u2026 (16 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "EMAIL",
+              "preview": "aman\u2026 (30 chars)"
+            },
+            {
+              "id": "pii-038",
+              "tags": [
+                "ctx:email"
+              ],
+              "type": "DATE",
+              "preview": "12/2\u2026 (10 chars)"
+            },
+            {
+              "id": "pii-039",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "EMAIL",
+              "preview": "laur\u2026 (27 chars)"
+            },
+            {
+              "id": "pii-039",
+              "tags": [
+                "ctx:traceback"
+              ],
+              "type": "ACCOUNT",
+              "preview": "5340\u2026 (16 chars)"
+            },
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            }
+          ],
+          "false_positives": [
+            {
+              "id": "long-010",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-011",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-016",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-018",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-019",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "neg-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "eyJv\u2026 (76 chars)"
+            },
+            {
+              "id": "secret-035",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "yCd5\u2026 (45 chars)"
+            },
+            {
+              "id": "secret-036",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "LtW!\u2026 (57 chars)"
+            },
+            {
+              "id": "secret-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": ".cI%\u2026 (67 chars)"
+            }
+          ]
+        }
+      },
+      "latency": {
+        "1k": {
+          "n": 21,
+          "p50": 20.924625016050413,
+          "p95": 30.53054100018926,
+          "max": 31.880458001978695
+        },
+        "all": {
+          "n": 450,
+          "p50": 7.5971464975737035,
+          "p95": 84.12188124930252,
+          "max": 214.47887501562946
+        },
+        "4k": {
+          "n": 21,
+          "p50": 81.86095801647753,
+          "p95": 85.82070798729546,
+          "max": 87.75154198519886
+        },
+        "8k": {
+          "n": 18,
+          "p50": 183.1903330021305,
+          "p95": 203.40758929960427,
+          "max": 214.47887501562946
+        },
+        "short": {
+          "n": 390,
+          "p50": 7.32381250418257,
+          "p95": 14.205440093064677,
+          "max": 27.435457974206656
+        }
+      },
+      "tokens_per_s": 31881.44786254451,
+      "cold_start_s": 3.4368538856506348,
+      "load_s": 3.4046362079971004,
+      "first_call_ms": 25.896749983076006,
+      "peak_rss_mb": 2540.640625,
+      "peak_rss_children_mb": 0.0,
+      "mlx_peak_mb": 2232.704523086548,
+      "stats": {},
+      "checks": {
+        "secret_recall": [
+          0.9894736842105263,
+          true
+        ],
+        "negative_fp_rate": [
+          0.025,
+          true
+        ],
+        "p95_le_4k_ms": [
+          85.82070798729546,
+          true
+        ]
+      }
+    },
+    "rules+pf-8bit:pii": {
+      "scopes": {
+        "secrets": {
+          "types": {
+            "*": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8411214953271028,
+              "f1": 0.909286328460877
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8411214953271028,
+              "f1": 0.909286328460877
+            }
+          },
+          "recall_by_size": {
+            "1k": 1.0,
+            "4k": 1.0,
+            "8k": 1.0,
+            "short": 0.9846153846153847
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 1,
+            "spans": 1,
+            "fp_rate": 0.025
+          },
+          "misses": [
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            }
+          ],
+          "false_positives": [
+            {
+              "id": "long-010",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-011",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-016",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-018",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-019",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "neg-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "eyJv\u2026 (76 chars)"
+            },
+            {
+              "id": "secret-035",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "yCd5\u2026 (45 chars)"
+            },
+            {
+              "id": "secret-036",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "LtW!\u2026 (57 chars)"
+            },
+            {
+              "id": "secret-038",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "redi\u2026 (55 chars)"
+            },
+            {
+              "id": "secret-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": ".cI%\u2026 (67 chars)"
+            }
+          ]
+        },
+        "all": {
+          "types": {
+            "*": {
+              "gold": 255,
+              "pred": 281,
+              "recall": 0.996078431372549,
+              "full_cover": 0.9882352941176471,
+              "precision": 0.8932384341637011,
+              "f1": 0.9418595203096491
+            },
+            "SECRET": {
+              "gold": 95,
+              "pred": 107,
+              "recall": 0.9894736842105263,
+              "full_cover": 0.9894736842105263,
+              "precision": 0.8411214953271028,
+              "f1": 0.909286328460877
+            },
+            "ACCOUNT": {
+              "gold": 12,
+              "pred": 14,
+              "recall": 1.0,
+              "full_cover": 1.0,
+              "precision": 0.9285714285714286,
+              "f1": 0.962962962962963
+            },
+            "PERSON": {
+              "gold": 56,
+              "pred": 59,
+              "recall": 1.0,
+              "full_cover": 1.0,
+              "precision": 0.9491525423728814,
+              "f1": 0.9739130434782608
+            },
+            "EMAIL": {
+              "gold": 56,
+              "pred": 60,
+              "recall": 1.0,
+              "full_cover": 0.9821428571428571,
+              "precision": 0.9333333333333333,
+              "f1": 0.9655172413793104
+            },
+            "PHONE": {
+              "gold": 16,
+              "pred": 15,
+              "recall": 1.0,
+              "full_cover": 1.0,
+              "precision": 1.0,
+              "f1": 1.0
+            },
+            "ADDRESS": {
+              "gold": 8,
+              "pred": 11,
+              "recall": 1.0,
+              "full_cover": 0.875,
+              "precision": 0.8181818181818182,
+              "f1": 0.9
+            },
+            "URL": {
+              "gold": 4,
+              "pred": 7,
+              "recall": 1.0,
+              "full_cover": 1.0,
+              "precision": 0.5714285714285714,
+              "f1": 0.7272727272727273
+            },
+            "DATE": {
+              "gold": 8,
+              "pred": 8,
+              "recall": 1.0,
+              "full_cover": 1.0,
+              "precision": 1.0,
+              "f1": 1.0
+            }
+          },
+          "recall_by_size": {
+            "1k": 1.0,
+            "4k": 1.0,
+            "8k": 1.0,
+            "short": 0.9945945945945946
+          },
+          "negatives": {
+            "records": 40,
+            "flagged": 3,
+            "spans": 3,
+            "fp_rate": 0.075
+          },
+          "misses": [
+            {
+              "id": "secret-047",
+              "tags": [
+                "contextual",
+                "prose-password"
+              ],
+              "type": "SECRET",
+              "preview": "WAVC\u2026 (16 chars)"
+            }
+          ],
+          "false_positives": [
+            {
+              "id": "long-002",
+              "type": "URL",
+              "source": "pf-mlx-8bit",
+              "preview": "http\u2026 (32 chars)"
+            },
+            {
+              "id": "long-002",
+              "type": "URL",
+              "source": "pf-mlx-8bit",
+              "preview": "http\u2026 (32 chars)"
+            },
+            {
+              "id": "long-010",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-011",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-012",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-014",
+              "type": "ACCOUNT",
+              "source": "pf-mlx-8bit",
+              "preview": "402d\u2026 (36 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-015",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-016",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-018",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "long-019",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "v1/u\u2026 (45 chars)"
+            },
+            {
+              "id": "neg-015",
+              "type": "PERSON",
+              "source": "pf-mlx-8bit",
+              "preview": "John\u2026 (8 chars)"
+            },
+            {
+              "id": "neg-018",
+              "type": "PERSON",
+              "source": "pf-mlx-8bit",
+              "preview": "@ci-\u2026 (10 chars)"
+            },
+            {
+              "id": "neg-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit",
+              "preview": "eyJv\u2026 (76 chars)"
+            },
+            {
+              "id": "pii-008",
+              "type": "EMAIL",
+              "source": "pf-mlx-8bit",
+              "preview": "supp\u2026 (21 chars)"
+            },
+            {
+              "id": "pii-008",
+              "type": "ADDRESS",
+              "source": "pf-mlx-8bit",
+              "preview": "Orde\u2026 (11 chars)"
+            },
+            {
+              "id": "pii-018",
+              "type": "EMAIL",
+              "source": "pf-mlx-8bit",
+              "preview": "supp\u2026 (21 chars)"
+            },
+            {
+              "id": "pii-028",
+              "type": "EMAIL",
+              "source": "pf-mlx-8bit",
+              "preview": "supp\u2026 (21 chars)"
+            },
+            {
+              "id": "pii-028",
+              "type": "ADDRESS",
+              "source": "pf-mlx-8bit",
+              "preview": "5\u2026 (5 chars)"
+            },
+            {
+              "id": "pii-038",
+              "type": "EMAIL",
+              "source": "pf-mlx-8bit",
+              "preview": "supp\u2026 (21 chars)"
+            },
+            {
+              "id": "secret-017",
+              "type": "URL",
+              "source": "pf-mlx-8bit",
+              "preview": "http\u2026 (34 chars)"
+            },
+            {
+              "id": "secret-035",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "yCd5\u2026 (45 chars)"
+            },
+            {
+              "id": "secret-036",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "LtW!\u2026 (57 chars)"
+            },
+            {
+              "id": "secret-038",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": "redi\u2026 (55 chars)"
+            },
+            {
+              "id": "secret-039",
+              "type": "SECRET",
+              "source": "pf-mlx-8bit|rules:connection-string-password",
+              "preview": ".cI%\u2026 (67 chars)"
+            },
+            {
+              "id": "secret-046",
+              "type": "PERSON",
+              "source": "pf-mlx-8bit",
+              "preview": "Data\u2026 (11 chars)"
+            }
+          ]
+        }
+      },
+      "latency": {
+        "1k": {
+          "n": 21,
+          "p50": 22.123124974314123,
+          "p95": 31.277332978788763,
+          "max": 32.153792009921744
+        },
+        "all": {
+          "n": 450,
+          "p50": 7.503874512622133,
+          "p95": 85.22504769643993,
+          "max": 209.92033398943022
+        },
+        "4k": {
+          "n": 21,
+          "p50": 80.58087501558475,
+          "p95": 91.06820900342427,
+          "max": 92.26291699451394
+        },
+        "8k": {
+          "n": 18,
+          "p50": 184.60118748771492,
+          "p95": 208.28068313130643,
+          "max": 209.92033398943022
+        },
+        "short": {
+          "n": 390,
+          "p50": 7.227208494441584,
+          "p95": 13.866966441855764,
+          "max": 26.348082988988608
+        }
+      },
+      "tokens_per_s": 31913.194065626332,
+      "cold_start_s": 2.737618923187256,
+      "load_s": 2.7021880840184167,
+      "first_call_ms": 27.00258299591951,
+      "peak_rss_mb": 2540.484375,
+      "peak_rss_children_mb": 0.0,
+      "mlx_peak_mb": 2232.704465866089,
+      "stats": {},
+      "checks": {
+        "secret_recall": [
+          0.9894736842105263,
+          true
+        ],
+        "negative_fp_rate": [
+          0.025,
+          true
+        ],
+        "p95_le_4k_ms": [
+          91.06820900342427,
+          true
+        ]
+      }
+    }
+  }
+}

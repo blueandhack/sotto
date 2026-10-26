@@ -1,0 +1,232 @@
+# sotto default L1 rules (gitleaks-style).
+#
+# Each [[rule]] is a regex. `group` selects the capture group that holds the secret
+# (0 = whole match). `keywords` is a cheap case-insensitive prefilter: the regex only
+# runs when one keyword occurs in the text. `confidence` is reported with each span.
+#
+# `prose_guard = true` drops a lowercase-word value that a sentence continues after.
+# `filters` picks which [filters] drop a captured value: "placeholder" (stopwords,
+# placeholder words, repeated characters; the default), "all" (also references to values
+# held elsewhere, and plain numbers; for rules keyed on a variable name), or false.
+
+[allowlist]
+# Exact strings that are never redacted: documented example credentials and test cards.
+strings = [
+  "AKIAIOSFODNN7EXAMPLE",
+  "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+  "4242424242424242", "4242 4242 4242 4242",
+  "4111111111111111", "4111 1111 1111 1111",
+]
+# Full-match regexes. sotto's own placeholders must never be re-redacted.
+patterns = [
+  '''SOTTO_[A-Z]+_[0-9a-f]{8,12}''',
+  # Stripe publishable keys are public by design.
+  '''pk_(?:test|live)_[A-Za-z0-9]{10,247}''',
+  # Claude Code's own vocabulary: the model reads product names as people.
+  '''(?:Claude|Anthropic)(?: Code| Opus| Sonnet| Haiku| Fable)?(?: [0-9.]+)?''',
+]
+
+[filters]
+# Regexes searched in a captured value. Any match drops the value.
+stopwords = '''(?i)^(?:true|false|null|none|nil|undefined|required|optional|string|str|bool|boolean|int|integer|number|object|any|bearer|basic|password|passwd|pass|pwd|secret|secrets|token|changeme|example|sample|dummy|test|testing|placeholder|redacted|hidden|masked|todo|tbd|fixme|n/?a|\*+|x{3,}|\.{3,})$'''
+placeholder = '''(?i)^(?:my[_-]|insert[_-]|replace[_-]|enter[_-]|sample|dummy|fake|<|\{\{|\[\[)|(?:^|[_-])your[_-]|example|placeholder|redacted|(?:\.{3}|…)$'''
+# References to a value held elsewhere: env vars, template variables, attribute access, calls.
+reference = '''^(?:\$|%\(|%[A-Z_]+%|process\.env|os\.(?:environ|getenv)|getenv|ENV\[|env\(|secrets\.|vault:|ref\+|!Ref|!Sub|self\.|this\.|config\.|settings\.)|\$\{|^[\w.]+[(\[]|^[A-Za-z_]\w{0,30}(?:\.[A-Za-z_]\w{0,30})+$|^[A-Z][A-Z0-9]*_[A-Z0-9_]+$|^[a-z]+(?:[-_.][a-z]+)+$|^[a-z][a-z0-9+.-]*://|^(?:\.{0,2}/|~/)'''
+numeric = '''^[\d.:_-]+$'''
+# Public by design: an Ethereum-style address (0x + 40 hex). A 64-hex private key still matches.
+public = '''^0x[0-9a-fA-F]{40}$'''
+# A run of six identical characters (xxxxxx, 000000, ******) marks a placeholder.
+repeated = '''(.)\1{5}'''
+
+[entropy]
+# High-entropy strings with no provider prefix. Low confidence, but still redacted.
+enabled = true
+min_len = 20
+max_len = 256
+# Shannon entropy as a fraction of the maximum possible for the string's length.
+min_ratio = 0.88
+confidence = 0.5
+# Skip candidates preceded by these markers (hashes, digests, inline data).
+skip_before = '''(?i)(?:sha(?:1|224|256|384|512)[-:=]|md5[-:=]|integrity|checksum|digest|h1:|base64,|oid |nonce|@sha256:|ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp\d+)\s*["']?$'''
+
+[luhn]
+enabled = true
+confidence = 0.9
+
+# --- Private keys and tokens with a fixed structure ------------------------------
+
+[[rule]]
+id = "private-key"
+regex = '''-----BEGIN[A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----[\s\S]{16,}?-----END[A-Z0-9 ]{0,40}PRIVATE KEY(?: BLOCK)?-----'''
+keywords = ["private key"]
+filters = false
+
+[[rule]]
+id = "jwt"
+regex = '''\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}'''
+keywords = ["eyj"]
+
+# --- Provider keys ---------------------------------------------------------------
+
+[[rule]]
+id = "aws-access-key-id"
+regex = '''\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16})\b'''
+group = 1
+keywords = ["akia", "asia", "abia", "acca", "a3t"]
+
+[[rule]]
+id = "aws-secret-access-key"
+regex = '''(?i)aws[\w.-]{0,30}?(?:secret|sk)[\w.-]{0,20}["']?\s*[:=]\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])'''
+group = 1
+keywords = ["aws"]
+
+[[rule]]
+id = "github-token"
+regex = '''\b(gh[pousr]_[A-Za-z0-9]{36,255})\b'''
+group = 1
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[[rule]]
+id = "github-fine-grained-pat"
+regex = '''\b(github_pat_[A-Za-z0-9_]{60,100})\b'''
+group = 1
+keywords = ["github_pat_"]
+
+[[rule]]
+id = "gitlab-pat"
+regex = '''\b(glpat-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["glpat-"]
+
+[[rule]]
+id = "anthropic-key"
+regex = '''\b(sk-ant-[a-z]+\d*-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["sk-ant-"]
+
+[[rule]]
+id = "openai-key"
+regex = '''\b(sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["t3blbkfj"]
+
+[[rule]]
+id = "openai-project-key"
+regex = '''\b(sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["sk-proj-", "sk-svcacct-", "sk-admin-"]
+
+[[rule]]
+id = "stripe-key"
+regex = '''\b((?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,247})\b'''
+group = 1
+keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_"]
+
+[[rule]]
+id = "stripe-webhook-secret"
+regex = '''\b(whsec_[A-Za-z0-9+/=]{32,})'''
+group = 1
+keywords = ["whsec_"]
+
+[[rule]]
+id = "slack-token"
+regex = '''\b(xox[baprse]-[A-Za-z0-9-]{10,250})(?![A-Za-z0-9-])'''
+group = 1
+keywords = ["xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-", "xoxe-"]
+
+[[rule]]
+id = "slack-webhook"
+regex = '''(https://hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{20,})'''
+group = 1
+keywords = ["hooks.slack.com"]
+
+[[rule]]
+id = "discord-webhook"
+regex = '''(https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]{30,})'''
+group = 1
+keywords = ["discord"]
+
+[[rule]]
+id = "google-api-key"
+regex = '''\b(AIza[0-9A-Za-z_-]{35})(?![0-9A-Za-z_-])'''
+group = 1
+keywords = ["aiza"]
+
+[[rule]]
+id = "huggingface-token"
+regex = '''\b(hf_[A-Za-z]{34,40})\b'''
+group = 1
+keywords = ["hf_"]
+
+[[rule]]
+id = "npm-token"
+regex = '''\b(npm_[A-Za-z0-9]{36})\b'''
+group = 1
+keywords = ["npm_"]
+
+[[rule]]
+id = "sendgrid-key"
+regex = '''\b(SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["sg."]
+
+[[rule]]
+id = "twilio-api-key"
+regex = '''\b(SK[0-9a-fA-F]{32})\b'''
+group = 1
+keywords = ["sk"]
+
+[[rule]]
+id = "digitalocean-token"
+regex = '''\b(do[por]_v1_[a-f0-9]{64})\b'''
+group = 1
+keywords = ["_v1_"]
+
+# --- Credentials in context ------------------------------------------------------
+
+[[rule]]
+id = "connection-string-password"
+regex = '''\b[a-zA-Z][a-zA-Z0-9+.-]{1,20}://[^\s:/@"'<>]*:([^\s@/"'<>]{3,})@[^\s"'<>]+'''
+group = 1
+keywords = ["://"]
+filters = "all"
+
+[[rule]]
+id = "authorization-header"
+regex = '''(?i)\bauthorization["']?\s*[:=]\s*["']?(?:bearer|basic|token|bot)\s+([A-Za-z0-9._~+/=-]{12,})'''
+group = 1
+keywords = ["authorization"]
+filters = "all"
+
+[[rule]]
+id = "bearer-token"
+regex = '''(?i)\bbearer\s+([A-Za-z0-9._~+/-]{20,}=*)'''
+group = 1
+keywords = ["bearer"]
+filters = "all"
+
+[[rule]]
+id = "xml-secret-element"
+regex = '''(?i)<((?:\w+[_-])?(?:password|passwd|pwd|secret|api[_-]?key|token|client[_-]?secret))>([^<\s]{6,200})</\1>'''
+group = 2
+keywords = ["pass", "pwd", "secret", "key>", "token"]
+filters = "all"
+
+[[rule]]
+id = "kubernetes-secret-data"
+# Values under data: in a kind: Secret manifest are base64-encoded secrets.
+regex = '''(?m)^[ \t]+[\w.-]+:[ \t]+([A-Za-z0-9+/]{12,}={0,2})[ \t]*$'''
+group = 1
+keywords = ["kind: secret"]
+filters = "all"
+
+[[rule]]
+id = "secret-assignment"
+regex = '''(?i)[\w.-]*?(?:passw(?:or)?d|pwd|passphrase|secret|token|api[_.-]?key|apikey|access[_.-]?key|auth[_.-]?key|private[_.-]?key|client[_.-]?secret|credentials?)[\w.-]*["']?[ \t]*(?:=|:=|=>|:)[ \t]*["'`]?([^\s"'`,;]{6,200})'''
+group = 1
+keywords = ["pass", "pwd", "secret", "token", "key", "credential"]
+filters = "all"
+confidence = 0.8
+# Prose, not an assignment: "set TOKEN= followed by the value" (a lowercase word, then more words).
+prose_guard = true

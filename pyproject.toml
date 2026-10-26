@@ -1,0 +1,49 @@
+[project]
+name = "sotto"
+version = "0.0.1"
+description = "Local secret and PII redaction proxy for Claude Code"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "typer>=0.12",
+    "keyring>=25",  # install salt in the macOS Keychain (Security framework, not the `security` CLI)
+    "starlette>=0.45",
+    "uvicorn>=0.32",
+    "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+# L2: OpenAI Privacy Filter on MLX (default) or PyTorch/MPS (comparison).
+pf = [
+    "mlx>=0.31",
+    "mlx-lm>=0.28",  # imported by mlx-embeddings' privacy-filter model; runs the opt-in L3 judge
+    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings@9b28270be81211f2b8daed0041aec65ea5dc4b28",  # privacy-filter support is unreleased (PyPI 0.1.0 lacks it)
+    "numpy>=2.0",
+    "tokenizers>=0.21",
+    "huggingface-hub>=0.25",
+]
+pf-torch = [
+    "torch>=2.9",
+    "transformers>=5.6",
+    "numpy>=2.0",
+]
+# Benchmark only: the Apple on-device model through its Python SDK (dropped from v1).
+afm = [
+    "apple-fm-sdk>=0.2.1",
+]
+
+[project.scripts]
+sotto = "sotto.cli:app"
+# For editors that launch Claude Code through a wrapper (VS Code: claudeCode.claudeProcessWrapper).
+sotto-claude-wrapper = "sotto.launch:wrap_main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "faker>=30",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"

@@ -1,0 +1,212 @@
+"""Run the proxy in the background and Claude Code in front of it (`sotto claude`)."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import shutil
+import signal
+import socket
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+from .config import Config
+from .proxy import Proxy
+
+RUNTIME_FILE = Path.home() / ".config" / "sotto" / "runtime.json"
+LOG_FILE = Path.home() / ".config" / "sotto" / "sotto.log"
+
+# Settings or environment that would send Claude Code's traffic somewhere other than sotto.
+BYPASS_KEYS = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+               "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL")
+
+
+def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, upstream: str | None = None,
+                mode: str = "serve") -> Proxy:
+    from .detect.pipeline import default_pipeline
+    from .redact import Redactor
+    from .stats import stats_token
+    from .vault import Vault
+
+    from . import __version__
+
+    pii = cfg.pii if pii is None else pii
+    pipeline = default_pipeline(pii=pii, rules_only=rules_only,
+                                allow_strings=cfg.allow_strings, allow_patterns=cfg.allow_patterns)
+    info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__}
+    return Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
+                 stats_token=stats_token(), info=info)
+
+
+def bypass_risks(cwd: Path) -> list[str]:
+    """Places that could route Claude Code around sotto. Any hit means: do not start."""
+    risks = [f"environment variable {k} is set" for k in BYPASS_KEYS[1:] if os.environ.get(k)]
+    files = [Path.home() / ".claude" / "settings.json", Path.home() / ".claude" / "settings.local.json",
+             Path("/Library/Application Support/ClaudeCode/managed-settings.json")]
+    for d in [cwd, *cwd.parents]:
+        files += [d / ".claude" / "settings.json", d / ".claude" / "settings.local.json"]
+    for f in files:
+        try:
+            env = json.loads(f.read_text()).get("env", {})
+        except (OSError, ValueError, AttributeError):
+            continue
+        risks += [f"{f} sets env {k}" for k in BYPASS_KEYS if isinstance(env, dict) and k in env]
+    return risks
+
+
+def _write_runtime(port: int) -> None:
+    RUNTIME_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = RUNTIME_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"pid": os.getpid(), "port": port, "started": time.time()}, f)
+    tmp.replace(RUNTIME_FILE)
+
+
+def _clear_runtime() -> None:
+    try:
+        if json.loads(RUNTIME_FILE.read_text()).get("pid") == os.getpid():
+            RUNTIME_FILE.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+class BackgroundServer:
+    """uvicorn in a thread, on a socket bound before it starts (port 0 picks a free one)."""
+
+    def __init__(self, proxy: Proxy, port: int = 0):
+        import uvicorn
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind(("127.0.0.1", port))
+        self.port = self.sock.getsockname()[1]
+        config = uvicorn.Config(proxy.app, log_level="warning", access_log=False, lifespan="off")
+        self.server = uvicorn.Server(config)
+        self.thread = threading.Thread(target=self.server.run, kwargs={"sockets": [self.sock]}, daemon=True)
+
+    def start(self, timeout: float = 10) -> None:
+        self.thread.start()
+        deadline = time.monotonic() + timeout
+        while not self.server.started:
+            if not self.thread.is_alive() or time.monotonic() > deadline:
+                raise RuntimeError("the proxy did not start")
+            time.sleep(0.02)
+        _write_runtime(self.port)
+
+    def stop(self) -> None:
+        self.server.should_exit = True
+        self.thread.join(timeout=5)
+        _clear_runtime()
+
+
+def log_to_file(level: str) -> None:
+    """In `sotto claude` the terminal belongs to Claude Code; sotto logs to a private file."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if not LOG_FILE.exists():
+        os.close(os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT, 0o600))
+    handler = logging.FileHandler(LOG_FILE)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    root = logging.getLogger()
+    root.handlers[:] = [handler]
+    root.setLevel(level.upper())
+    for name in ("httpx", "httpcore", "uvicorn", "uvicorn.error"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+def run_claude(proxy: Proxy, args: list[str]) -> int:
+    claude = shutil.which("claude")
+    if claude is None:
+        raise FileNotFoundError("`claude` is not on PATH")
+    return run_through(proxy, [claude, *args])
+
+
+def run_through(proxy: Proxy, command: list[str]) -> int:
+    """Start the proxy, run the command pointed at it, stop the proxy when it exits."""
+    server = BackgroundServer(proxy)
+    server.start()
+    try:
+        return _run_child(command, {**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.port}"})
+    finally:
+        server.stop()
+
+
+def _run_child(command: list[str], env: dict[str, str]) -> int:
+    """Run Claude with stdio inherited. Ctrl-C reaches it directly (same process group);
+    a TERM or HUP sent to sotto (an editor stopping the session) is passed on to it."""
+    child = subprocess.Popen(command, env=env)
+
+    def forward(signum, _frame):
+        if child.poll() is None:
+            child.send_signal(signum)
+
+    previous = {sig: signal.signal(sig, handler) for sig, handler in
+                ((signal.SIGINT, signal.SIG_IGN), (signal.SIGTERM, forward), (signal.SIGHUP, forward))}
+    try:
+        return child.wait()
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def shared_serve_port(cfg: Config) -> int | None:
+    """The port of a running `sotto serve`, if there is one. It must answer the stats endpoint
+    with this user's private token and say it is in serve mode: something else listening on
+    the port gets nothing."""
+    import httpx
+
+    from .stats import TOKEN_FILE
+
+    try:
+        token = TOKEN_FILE.read_text().strip()
+        r = httpx.get(f"http://127.0.0.1:{cfg.port}/_sotto/stats", headers={"authorization": f"Bearer {token}"}, timeout=1.5)
+        return cfg.port if r.status_code == 200 and r.json().get("mode") == "serve" else None
+    except (OSError, ValueError, httpx.HTTPError):
+        return None
+
+
+def wrap_main() -> int:
+    """`sotto-claude-wrapper <claude binary> [args...]`: for editors that launch Claude Code
+    through a wrapper (VS Code's claudeCode.claudeProcessWrapper setting).
+
+    Uses a running `sotto serve` when there is one, so every conversation shares one model;
+    otherwise starts a proxy for this conversation. Never writes to stdout: the editor talks
+    to Claude over it. Refusals go to stderr, and Claude is not started.
+    """
+    import sys
+
+    from .config import ConfigError, load
+    from .detect.pipeline import ModelUnavailable
+
+    def refuse(message: str) -> int:
+        print(f"sotto: {message}", file=sys.stderr)
+        return 2
+
+    if len(sys.argv) < 2:
+        return refuse("usage: sotto-claude-wrapper <claude binary> [args...]")
+    command = sys.argv[1:]
+    risks = bypass_risks(Path.cwd())
+    if risks:
+        return refuse("refusing to start, Claude Code could bypass the proxy: " + "; ".join(risks))
+    try:
+        cfg = load()
+    except ConfigError as e:
+        return refuse(f"bad config: {e}")
+    log_to_file(cfg.log_level)
+    if not os.access(command[0], os.X_OK):
+        return refuse(f"cannot run {command[0]}: not an executable file")
+    port = shared_serve_port(cfg)
+    try:
+        if port is not None:
+            logging.getLogger("sotto").info("wrapper: using sotto serve on port %d", port)
+            return _run_child(command, {**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}"})
+        try:
+            proxy = build_proxy(cfg, upstream=os.environ.get("ANTHROPIC_BASE_URL"), mode="vscode")
+        except ModelUnavailable as e:
+            return refuse(str(e))
+        return run_through(proxy, command)
+    except OSError as e:
+        return refuse(f"cannot run {command[0]}: {e.strerror}")
