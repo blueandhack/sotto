@@ -123,19 +123,20 @@ Measured on synthetic, labeled datasets on an M5 Pro (details in [bench/results/
 
 | | Result |
 | --- | --- |
-| Secret recall | 0.989 to 1.000 across three datasets, two of them held out |
-| Personal data (`pii = true`) | recall 1.000, precision 0.90 to 0.93 |
-| Fake secrets wrongly flagged | 0 to 1 on two sets; **9 of 15 on the freshest held-out set** (unusual ID formats; see below) |
+| Secret recall | 0.989 to 1.000 across four datasets, three of them held out |
+| Personal data (`pii = true`) | recall 0.992 to 1.000, precision 0.85 to 0.93 |
+| Fake secrets wrongly flagged | 1 of 40 and 0 of 15 on the first two sets; **9 of 15 and 3 of 15 on the two freshest held-out sets** (unusual ID formats; see below) |
 | Time added per request | about 100 to 145 ms at the 95th percentile for 4K tokens of new text; earlier turns are cached |
 
 No language model judges spans at request time. The Apple on-device model and Qwen3-4B were both measured and dropped: deterministic refinement removed more false positives, faster.
 
 ## Limitations
 
-- **False positives on unusual identifiers.** On a fresh set of hard negatives, 9 of 15 were flagged (memory addresses, Azure resource IDs, Stripe object IDs, Kubernetes pod hashes). Over-masking costs Claude some context but never leaks. A small trained classifier is planned for this.
+- **False positives on unusual identifiers.** On two fresh sets of hard negatives, 9 of 15 and 3 of 15 were flagged (memory addresses, Azure resource IDs, Stripe object IDs, Kubernetes pod hashes, AWS VPC and security group IDs, Xcode build folders). Over-masking costs Claude some context but never leaks. A small trained classifier is planned for this.
 - **Images and PDFs pass through unscanned.**
 - **Local transcripts keep real values.** Claude Code's history on your disk is restored, so it holds real values. sotto protects what leaves your Mac, not what is stored on it.
 - **Shell commands receive real values.** Claude can still run a command that sends a restored secret somewhere. Use it together with [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing), whose network allowlist stops that. sotto controls what Anthropic sees; the sandbox controls what commands can do.
+- **Some secrets in prose are missed.** A 32-character hex key mentioned a few words after its name ("the Datadog key for staging is …") is dropped by the refinement step that removes hashes. Recall is 0.989 on the freshest set.
 - **English-first.** The local model is strongest on English text.
 - **macOS on Apple silicon only.** Codex support is being explored.
 

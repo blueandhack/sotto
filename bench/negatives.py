@@ -340,3 +340,71 @@ OAUTH_REDIRECT_URI=http://127.0.0.1:8976/callback"""),
     ("checksum-manifest", """SHA256 (checkout-1.27.3-darwin-arm64.tar.gz) = 6c8f9a2d4e1b3c5a7f9e0d2c4b6a8f1e3d5c7b9a0f2e4d6c8b0a2f4e6d8c0b2a
 SHA256 (checkout-1.27.3-linux-amd64.tar.gz) = 1a3c5e7f9b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a"""),
 ]
+
+
+# Held-out set 3, written Oct 26, 2026 after IBANs became a rule and before any run on it:
+# identifier shapes none of the other sets has. `gen.py --negatives holdout3` writes these.
+HOLDOUT3_NEGATIVES = [
+    ("gha-pinned-actions", """steps:
+  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  - uses: actions/setup-node@b39b52d1213e96004bfcb1c61a8a6fa8ab84f3e8 # v5.1.0
+  - run: npm ci && npm test"""),
+    ("aws-arn-request-id", """An error occurred (AccessDenied) when calling the AssumeRole operation:
+User: arn:aws:sts::418295730164:assumed-role/ci-runner/i-0c7f3e9a2b1d4f6e8 is not authorized
+RequestId: 7b2e4f1a-9c3d-4e8b-a6f5-2d1c0b9e8f7a"""),
+    ("terraform-plan-ids", """  # aws_security_group_rule.ingress will be updated in-place
+  ~ resource "aws_security_group_rule" "ingress" {
+        id                = "sgrule-2846193057"
+        security_group_id = "sg-0a7c3e5f9b1d2e4c6"
+      ~ cidr_blocks       = ["10.0.0.0/16"] -> ["10.0.0.0/8"]
+        vpc_id            = "vpc-05f2b8d1c4e7a9036"
+    }"""),
+    ("cargo-lock-checksums", """[[package]]
+name = "serde_json"
+version = "1.0.140"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
+dependencies = ["itoa", "memchr", "ryu", "serde"]"""),
+    ("vite-build-assets", """dist/index.html                   0.46 kB │ gzip:  0.30 kB
+dist/assets/index-BqX7vN2k.css    8.12 kB │ gzip:  2.41 kB
+dist/assets/vendor-Dk3pL9wQ.js  142.87 kB │ gzip: 45.93 kB
+dist/assets/index-C8mT4rYz.js    23.05 kB │ gzip:  7.88 kB"""),
+    ("helm-secret-refs", """postgresql:
+  auth:
+    existingSecret: checkout-db-credentials
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: password
+env:
+  - name: STRIPE_KEY
+    valueFrom:
+      secretKeyRef: { name: payments, key: stripe-secret-key }"""),
+    ("w3c-traceparent", """traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+tracestate: congo=t61rcWkgMzE,rojo=00f067aa0ba902b7
+2026-10-26T08:12:44Z checkout span_id=b7ad6b7169203331 parent=00f067aa0ba902b7 dur=41ms"""),
+    ("docker-digests", """REPOSITORY        TAG       DIGEST                                                                    IMAGE ID       SIZE
+node              22-slim   sha256:3f1c8e9a7b2d4f6e0a5c9b8d7e6f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f   a91c2d3e4f5b   219MB
+python            3.12      sha256:9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d   0b7f3c2a9e1d   1.02GB"""),
+    ("pip-hashes", """certifi==2026.8.14 \\
+    --hash=sha256:5a1e7c9d2b4f6a8c0e3d5f7b9a1c3e5d7f9b2a4c6e8d0f1b3a5c7e9d2f4b6a8c \\
+    --hash=sha256:c2e4a6b8d0f1c3e5a7b9d2f4c6e8a0b1d3f5c7e9a2b4d6f8c0e1a3b5d7f9c2e4
+idna==3.11 \\
+    --hash=sha256:7d9b1f3a5c7e9b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a1c3e5b7d9f2a4c6e8b0d"""),
+    ("ssh-fingerprint", """The authenticity of host 'github.com (140.82.121.4)' can't be established.
+ED25519 key fingerprint is SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU.
+This key is not known by any other names."""),
+    ("eth-tx-hash", """Transaction submitted: 0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060
+Block 21483907 · gas used 51,234 · status: success"""),
+    ("mongo-objectids", """db.orders.find({ _id: ObjectId("6716f2c3a9e4b1d8c7f05e21") })
+{ _id: ObjectId("6716f2c3a9e4b1d8c7f05e21"), customer: ObjectId("66f0a1b2c3d4e5f6a7b8c9d0"), total: 4599 }"""),
+    ("xcode-deriveddata", """Build input file cannot be found:
+'/Users/dev/Library/Developer/Xcode/DerivedData/Checkout-bxkqzjwmpvnfytcxbfdqhtrkgnli/Build/Products/Debug-iphonesimulator/Checkout.app/Info.plist'"""),
+    ("nginx-access-log", """2001:db8:3c4d:15::1a2f - - [26/Oct/2026:08:14:03 +0000] "GET /api/v1/orders/ord_8Kq2Xz7Lm4Np?expand=items HTTP/2.0" 200 1843 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_6) AppleWebKit/605.1.15" rid=9f2c6a1e8b3d47f0a5c2e9d1b7f4a6c3"""),
+    ("openapi-password-field", """components:
+  schemas:
+    Login:
+      type: object
+      properties:
+        username: { type: string, example: jdoe }
+        password: { type: string, format: password, example: "********", minLength: 12 }"""),
+]

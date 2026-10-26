@@ -36,3 +36,22 @@ One difference: on held-out 2, pf-serve misses a UK IBAN in prose (`pii-036`, "a
 | Platforms | Apple silicon | macOS (Metal), Windows and Linux (Vulkan or CPU) |
 
 Latency at 4K and 8K tokens differs by run in both directions (held-out 2 ran slower for MLX than in `v1-holdout2.md`), so the two are about even.
+
+## After the switch: pf-serve with the IBAN rule, and held-out 3
+
+Oct 26, 2026. Raw tables: [`v2-data.md`](v2-data.md), [`v2-holdout.md`](v2-holdout.md), [`v2-holdout2.md`](v2-holdout2.md), [`v2-holdout3.md`](v2-holdout3.md), and MLX on held-out 3 for reference: [`mlx-holdout3.md`](mlx-holdout3.md).
+
+Held-out 3 is new: seed 10 and 15 hand-written hard negatives (`HOLDOUT3_NEGATIVES` in `bench/negatives.py`), written after the IBAN rule and before any run on it. Nothing has been tuned on it.
+
+| Dataset | Secret recall | Secret precision | Hard negatives flagged | PII recall / precision (`pii = true`) | p95 ≤ 4K tokens |
+| --- | --- | --- | --- | --- | --- |
+| Dev | 0.989 | 0.867 | 1/40 | 0.996 / 0.903 | 97 ms |
+| Held-out 1 | 1.000 | 0.782 | 0/15 | 1.000 / 0.852 | 97 ms |
+| Held-out 2 | 1.000 | 0.803 | 9/15 | 1.000 / 0.879 | 102 ms |
+| **Held-out 3 (fresh)** | **0.989** | **0.868** | **3/15** | **0.992 / 0.928** | **95 ms** |
+
+- The IBAN rule fixes the held-out 2 miss: ACCOUNT recall there is 1.00 (0.92 before).
+- On held-out 3, pf-serve and MLX miss the same two values and flag the same three negatives, so neither gap comes from the runtime:
+  - `secret-046`: "the Datadog key for staging is ‹32 hex› - please rotate it". Refinement drops hex runs unless a keyword sits right before them; here it is a few words earlier.
+  - A person's name in a commit message (`pii = true`).
+  - Flagged: a GitHub Actions SHA pin, AWS `sg-` and `vpc-` IDs, and an Xcode DerivedData folder name.
