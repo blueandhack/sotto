@@ -1,16 +1,20 @@
+import hashlib
+import os
 import stat
 import sys
 
 import pytest
 
+from sotto.detect import pfserve
 from sotto.detect.pfserve import PfServe, PfServeError
 
 # A stand-in for pf-serve that speaks its protocol: it reports " Priya Raman" (with the leading
 # space a BPE token carries) as a person, "ghp_" tokens as secrets, and "kitten" with a label
-# sotto does not map. MODE selects a failure.
+# sotto does not map. MODE selects a failure; "crash-once" crashes on its first request only.
 FAKE = r'''#!{python}
-import json, re, struct, sys
+import json, os, re, struct, sys, time
 mode = "{mode}"
+marker = "{marker}"
 out = sys.stdout.buffer
 if mode == "nohello":
     sys.exit(1)
@@ -29,8 +33,11 @@ while True:
     if mode == "error":
         msg = b"classify failed"
         out.write(struct.pack("<II", 1, len(msg)) + msg); out.flush(); continue
-    if mode == "crash":
+    if mode == "crash-once" and not os.path.exists(marker):
+        open(marker, "w").close()
         sys.exit(3)
+    if mode == "hang":
+        time.sleep(30)
     reply = struct.pack("<I", 0)
     for t in texts:
         found = [(m.start(), m.end(), 0.97, b"private_person") for m in re.finditer(rb" Priya Raman", t)]
@@ -45,7 +52,7 @@ while True:
 
 def fake(tmp_path, mode="ok"):
     p = tmp_path / f"pf-serve-{mode}"
-    p.write_text(FAKE.format(python=sys.executable, mode=mode))
+    p.write_text(FAKE.format(python=sys.executable, mode=mode, marker=tmp_path / "crashed"))
     p.chmod(p.stat().st_mode | stat.S_IEXEC)
     return p
 
@@ -73,24 +80,96 @@ def test_many_requests_on_one_process(tmp_path):
         pf.close()
 
 
-@pytest.mark.parametrize("mode, message", [("nohello", "no hello line"), ("badload", "the model didn't load")])
+@pytest.mark.parametrize("mode, message", [("nohello", "did not start: pf-serve closed its output"), ("badload", "the model didn't load")])
 def test_start_failures_are_reported(tmp_path, mode, message):
     with pytest.raises(PfServeError, match=message):
         PfServe(fake(tmp_path, mode), "model.gguf")
 
 
-def test_error_reply_raises(tmp_path):
+def test_error_reply_raises_and_keeps_the_process(tmp_path):
     pf = PfServe(fake(tmp_path, "error"), "model.gguf")
     try:
-        with pytest.raises(PfServeError, match="classify failed"):
-            pf.detect("hello Priya Raman")
+        pid = pf._proc.pid
+        for _ in range(2):
+            with pytest.raises(PfServeError, match="classify failed"):
+                pf.detect("hello Priya Raman")
+        assert pf._proc.pid == pid and pf.restarts == 0
     finally:
         pf.close()
 
 
-def test_a_crash_raises_and_stays_failed(tmp_path):
-    pf = PfServe(fake(tmp_path, "crash"), "model.gguf")
-    with pytest.raises(PfServeError):
+def test_a_crash_fails_that_request_and_the_next_one_restarts(tmp_path):
+    pf = PfServe(fake(tmp_path, "crash-once"), "model.gguf")
+    try:
+        with pytest.raises(PfServeError, match="closed its output"):
+            pf.detect("hello Priya Raman")
+        assert [s.type for s in pf.detect("hello Priya Raman")] == ["PERSON"]
+        assert pf.restarts == 1
+    finally:
+        pf.close()
+
+
+def test_a_hung_process_times_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(pfserve, "request_timeout", lambda n: 0.5)
+    pf = PfServe(fake(tmp_path, "hang"), "model.gguf")
+    with pytest.raises(PfServeError, match="timed out"):
         pf.detect("hello Priya Raman")
-    with pytest.raises(PfServeError, match="exited"):
-        pf.detect("again")
+    assert pf._proc is None  # killed; the next request starts a new one
+
+
+def test_finds_the_binary_and_model(tmp_path, monkeypatch):
+    for k in ("SOTTO_PF_SERVE", "SOTTO_PF_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setattr(pfserve, "MODEL_SIZE", 5)
+    assert pfserve.find_binary() is None and pfserve.find_model() is None
+    binary = tmp_path / "data" / "sotto" / "bin" / "pf-serve"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    hf = pfserve.model_candidates()[1]
+    hf.parent.mkdir(parents=True)
+    hf.write_bytes(b"12345")
+    assert pfserve.find_binary() == binary and pfserve.find_model() == hf
+    hf.write_bytes(b"1234")  # wrong size: an interrupted download
+    assert pfserve.find_model() is None
+    monkeypatch.setenv("SOTTO_PF_MODEL", str(hf))
+    assert pfserve.find_model() == hf
+
+
+class _Stream:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_bytes(self, n):
+        yield from (self.body[i:i + n] for i in range(0, len(self.body), n))
+
+
+@pytest.mark.parametrize("served, ok", [(b"weights!", True), (b"weightz!", False)])
+def test_download_checks_size_and_hash(tmp_path, monkeypatch, served, ok):
+    import httpx
+
+    monkeypatch.delenv("SOTTO_PF_MODEL", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
+    monkeypatch.setattr(pfserve, "MODEL_SIZE", 8)
+    monkeypatch.setattr(pfserve, "MODEL_SHA256", hashlib.sha256(b"weights!").hexdigest())
+    monkeypatch.setattr(httpx, "stream", lambda *a, **k: _Stream(served))
+    if ok:
+        path = pfserve.download_model()
+        assert path.read_bytes() == b"weights!" and path == pfserve.find_model()
+    else:
+        with pytest.raises(PfServeError, match="does not match"):
+            pfserve.download_model()
+        assert not any(p.exists() for p in pfserve.model_candidates())
+        assert not os.listdir(pfserve.model_candidates()[0].parent)  # no partial file left

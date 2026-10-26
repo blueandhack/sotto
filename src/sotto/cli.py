@@ -146,6 +146,31 @@ def selftest(rules_only: bool = typer.Option(False, help="Test with L1 rules onl
 
 
 @app.command()
+def setup() -> None:
+    """Download the Privacy Filter model (1.6 GB, once), checked against its pinned SHA-256."""
+    from .detect.pfserve import MODEL_URL, PfServeError, download_model, find_binary
+
+    typer.echo(f"model: {MODEL_URL}", err=True)
+    last = [-1]
+
+    def progress(done: int, total: int) -> None:
+        pct = done * 100 // total
+        if pct != last[0]:
+            last[0] = pct
+            typer.echo(f"\r  {pct}% of {total / 1e9:.1f} GB", nl=False, err=True)
+
+    try:
+        path = download_model(progress)
+    except (PfServeError, OSError) as e:
+        typer.echo(f"\nsotto setup: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"\nmodel ready: {path}", err=True)
+    if find_binary() is None:
+        typer.echo("pf-serve is not installed yet: run native/pf-serve/build.sh", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
 def doctor() -> None:
     """Check that this Mac can run sotto, and that nothing routes around it."""
     from .doctor import run

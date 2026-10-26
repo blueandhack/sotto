@@ -41,7 +41,7 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 | OS | macOS 27 or later (ships the `fm` command and the 8,192-token on-device model) |
 | Hardware | Apple silicon; reference machine is an M4 with 48 GB |
 | Network | Detection fully offline; the only outbound connection is the forwarded request to api.anthropic.com |
-| Language | Python 3.12+, managed with `uv` (both MLX and Apple's Foundation Models SDK are Python) |
+| Language | Python 3.12+, managed with `uv`; the model runs in pf-serve, a native program (C++ on ggml) |
 | Distribution | Homebrew tap later; `uv tool install` during development |
 | Name | `sotto` — check GitHub, PyPI and Homebrew before first publish; fall back to `sotto-redact` if taken |
 
@@ -60,13 +60,14 @@ Detection runs in two layers, cheapest first, followed by deterministic refineme
 | Layer | Catches | Engine | Expected cost |
 | --- | --- | --- | --- |
 | L1 Rules | API keys, tokens, JWTs, private keys, connection strings, `password=` assignments, high-entropy strings | Regex rules (gitleaks-style) + Shannon entropy + checksums (Luhn for cards) | Microseconds; always on |
-| L2 PII model | Names, addresses, emails, phones, URLs, dates, account numbers, secrets in context | OpenAI Privacy Filter (open-weight, Apache 2.0, 1.5B total / 50M active params, token classifier), 8-bit MLX weights | One forward pass: p95 ≈ 90 ms at 4K tokens (Phase 0) |
+| L2 PII model | Names, addresses, emails, phones, URLs, dates, account numbers, secrets in context | OpenAI Privacy Filter (open-weight, Apache 2.0, 1.5B total / 50M active params, token classifier), q8 GGUF on pf-serve | One forward pass: p95 ≈ 100–145 ms at 4K tokens |
 | Refinement | Model spans that are log noise: UUIDs, hashes, request ids, timestamps, API paths, placeholders, reserved example values | Deterministic rules in `detect/pipeline.py` | Microseconds |
 
 **Rules for each layer**
 
 - **L1** ships a default rule file (`rules.toml`) and supports user rules plus an allowlist (exact strings and regexes). Known example keys from docs, such as AWS's `AKIAIOSFODNN7EXAMPLE`, are allowlisted by default.
 - **L2** is off for PII by default and on for secrets-in-context. Users enable PII with `pii = true`. Load the model once at startup and keep it warm. **VERIFIED (Oct 25, 2026):** the model id is `openai/privacy-filter`. It has 8 labels (`account_number`, `private_address`, `private_date`, `private_email`, `private_person`, `private_phone`, `private_url`, `secret`), tagged BIOES (33 classes) and decoded with constrained Viterbi; the default operating point has all six transition biases at 0. MLX ports exist (`mlx-community/openai-privacy-filter-bf16`, `-8bit`, others) and run through `mlx-embeddings`. That support is on its GitHub `main` only (PyPI 0.1.0 lacks it), so sotto pins a commit and also needs `mlx-lm`. Transformers on MPS works but is about 10× slower; MLX is the backend. The model tags UUIDs, hashes and neighboring `key=value` log fields as `secret`, so sotto refines its secret spans (see `detect/pipeline.py`). With `pii = true` it also refines personal-data spans (`Pipeline.keep_pii`): IDs tagged as accounts, timestamps tagged as dates, API paths tagged as URLs, reserved example emails and phones, and lowercase identifiers tagged as names are dropped. That raised PII precision from 0.55–0.61 to 0.90–0.93 with no recall loss.
+- **Runtime: pf-serve (Oct 25, 2026).** The model runs in pf-serve (`native/pf-serve`, from magpie, MIT), built on privacy-filter.cpp (MIT) and ggml: a 2.4 MB binary using Metal on macOS, and Vulkan or the CPU on Windows and Linux. It replaces MLX so sotto needs no Python ML packages and can be packaged for other systems. The weights are `LocalAI-io/privacy-filter-GGUF` `privacy-filter-q8.gguf` at revision `935d868`, SHA-256 `80efc180…998c`, downloaded by `sotto setup`. Measured against MLX on all three datasets (`bench/results/PFSERVE.md`): the same secret recall and the same flagged negatives, 1.7 GB instead of 2.2–2.5 GB, and 0.7 s to load instead of 3–6 s. One IBAN was missed with `pii = true`; IBANs are now an L1 checksum rule. pf-serve runs as a child process: a request that errors or exceeds 30 s + 1 s per 4 KB is blocked, and the next request starts a new process. MLX stays in the benchmark as `sotto[mlx]`.
 - **No LLM judge in v1 (Oct 25, 2026).** Phase 0 tested two judges on 400 labeled spans. The Apple on-device model could not clear false positives without clearing real values. Qwen3-4B on MLX cleared some at first, but once personal-data refinement existed it cleared 0 of 347 spans while adding 2.2 GB and 1–1.5 s per turn. Both experiments are kept in `bench/judge.py` and `bench/results/MODELS.md`.
 - **Apple on-device model: dropped from v1 (Oct 25, 2026).** Phase 0 measured it as a span extractor and as a judge (`bench/results/MODELS.md`). As an extractor it had p95 27 s at 4K tokens and flagged 62% of hard negatives. As a judge, no prompting setup cleared false positives without also clearing real values: zero-shot cleared 3% of false positives and leaked 4 of 100 real secrets, and content-tagging mode leaked 69. Custom adapters could change this, but they are Swift-only and need Apple's entitlement. `detect/afm.py` stays for the benchmark. API notes from the VERIFY pass: `fm respond --no-stream -g -i <instructions> --schema <file> [--guardrails permissive-content-transformations]`; the SDK is PyPI `apple-fm-sdk` (`apple_fm_sdk`), with `SystemLanguageModel(...).context_size` (8192) and `LanguageModelSession(instructions=, model=).respond(prompt, json_schema=, options=)`.
 
@@ -165,7 +166,7 @@ Each record: `{"id", "text", "spans": [{"start", "end", "type"}], "tags": [...]}
 - Hard-negative false positives below 5%.
 - Added p95 latency per turn at or below 150 ms when new content is 4K tokens or less.
 - Keep AFM in the default pipeline only if it measurably improves precision on ambiguous spans within that budget. Otherwise ship it as an opt-in flag.
-- **Outcome (Oct 25, 2026):** the pipeline is `rules + pf` (8-bit MLX) with secret and personal-data refinement, and `pii = false` by default. No LLM judge: the Apple model and Qwen3-4B were both measured and dropped. See `bench/results/PHASE0.md` and `MODELS.md`.
+- **Outcome (Oct 25, 2026):** the pipeline is `rules + pf` (8-bit MLX at the time; pf-serve since, same results) with secret and personal-data refinement, and `pii = false` by default. No LLM judge: the Apple model and Qwen3-4B were both measured and dropped. See `bench/results/PHASE0.md` and `MODELS.md`.
 
 ## CLI, config, layout, milestones
 
@@ -210,7 +211,7 @@ level = "info"       # never logs values, only type + counts
 
 **Stack**
 
-Python 3.12, `uv`, Typer (CLI), Starlette + uvicorn (proxy server), httpx (async streaming upstream), pytest. L2 dependencies are an optional extra (`sotto[pf]`: MLX, mlx-embeddings, mlx-lm) so the core installs fast. `sotto[afm]` exists for the benchmark only.
+Python 3.12, `uv`, Typer (CLI), Starlette + uvicorn (proxy server), httpx (async streaming upstream), pytest. L2 needs no Python packages: pf-serve is a separate binary (`native/pf-serve/build.sh`) and `sotto setup` downloads its model. `sotto[mlx]`, `sotto[pf-torch]` and `sotto[afm]` exist for the benchmark only.
 
 **Repo layout**
 
@@ -284,5 +285,5 @@ The one test that must never fail: a canary secret sent through sotto never appe
 
 - Should Bash tool inputs get restored values? Restoring lets commands like `curl -H "Authorization: ..."` work, but it is also the easiest exfiltration path.
 - ~~Should `pii` default to on?~~ No (Phase 0): with PII on, 17–27% of hard negatives are flagged, and ACCOUNT, URL and DATE precision is 0.13–0.36.
-- With the Apple model dropped, nothing in v1 needs macOS 27 (MLX runs on macOS 14+). Should the OS floor come down?
+- With the Apple model dropped, nothing in v1 needs macOS 27 (pf-serve is built for macOS 14+). Should the OS floor come down?
 - Is a Swift binary worth it later for distribution, or does Python plus Homebrew stay simple enough?

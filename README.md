@@ -22,7 +22,7 @@ Claude Code ──▶ sotto (on your Mac) ──▶ Anthropic API
 
 1. **Detect.** Two layers, cheapest first:
    - 27 gitleaks-style rules, plus entropy and checksum checks, for structured secrets.
-   - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), an open-weight token classifier running locally on Apple silicon via MLX, for secrets in context and, optionally, personal data.
+   - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), an open-weight token classifier, for secrets in context and, optionally, personal data. It runs in pf-serve, a small native program on [privacy-filter.cpp](https://github.com/localai-org/privacy-filter.cpp) that uses the Mac's GPU through Metal.
    - A deterministic refinement step then drops what the model gets wrong: UUIDs, hashes, request IDs, timestamps, paths, placeholders and documented example keys.
 2. **Mask.** Each value becomes a placeholder derived from a secret per-install key (HMAC-SHA256). The same value always gets the same placeholder, so Anthropic's prompt cache keeps working. Values live only in memory and are cleared when sotto exits.
 3. **Restore.** Placeholders in Claude's answers are swapped back on your Mac, including in streamed text and in tool inputs (file edits, shell commands). Network tools such as WebFetch, WebSearch and MCP tools keep placeholders, so a prompt-injected request cannot send a real value to the internet.
@@ -31,16 +31,17 @@ Claude Code ──▶ sotto (on your Mac) ──▶ Anthropic API
 ## Requirements
 
 - A Mac with Apple silicon, and macOS 14 or later
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
+- Python 3.12+, [uv](https://docs.astral.sh/uv/), and Xcode or its command line tools (to build pf-serve)
 - Claude Code
-- About 2.5 GB of free memory while sotto runs (the local model)
+- About 1.7 GB of free memory while sotto runs (the local model), and 1.6 GB of disk for it
 
 ## Install
 
 ```sh
 git clone https://github.com/blueandhack/sotto.git && cd sotto
-uv tool install --editable '.[pf]'          # installs `sotto` and `sotto-claude-wrapper`
-uvx --from huggingface_hub hf download mlx-community/openai-privacy-filter-8bit   # the local model, once
+uv tool install --editable .                # installs `sotto` and `sotto-claude-wrapper`
+native/pf-serve/build.sh                    # builds pf-serve from pinned sources into ~/.local/share/sotto/bin
+sotto setup                                 # downloads the model (1.6 GB, once), checked against its pinned SHA-256
 sotto doctor                                # every line should be ✓
 sotto selftest                              # sends a canary secret through sotto to a local mock; fails if it leaks
 ```
@@ -110,7 +111,7 @@ level = "info"         # logs contain types and counts, never values
 | Running proxy's port | `~/.config/sotto/runtime.json` (0600) |
 | Masked values | Process memory only, cleared on exit |
 
-sotto makes no network calls except the request it forwards. There is no telemetry and no update check.
+sotto makes no network calls except the request it forwards, and `sotto setup`'s one model download. There is no telemetry and no update check.
 
 ## Mac app
 
@@ -118,14 +119,14 @@ A menu-bar app with a dashboard: a live flow map of where each request goes, req
 
 ## Accuracy and speed
 
-Measured on synthetic, labeled datasets on an M5 Pro (details in [bench/results/PHASE0.md](bench/results/PHASE0.md) and [MODELS.md](bench/results/MODELS.md)):
+Measured on synthetic, labeled datasets on an M5 Pro (details in [bench/results/PHASE0.md](bench/results/PHASE0.md), [MODELS.md](bench/results/MODELS.md) and [PFSERVE.md](bench/results/PFSERVE.md)):
 
 | | Result |
 | --- | --- |
 | Secret recall | 0.989 to 1.000 across three datasets, two of them held out |
 | Personal data (`pii = true`) | recall 1.000, precision 0.90 to 0.93 |
 | Fake secrets wrongly flagged | 0 to 1 on two sets; **9 of 15 on the freshest held-out set** (unusual ID formats; see below) |
-| Time added per request | about 85 ms at the 95th percentile for 4K tokens of new text; earlier turns are cached |
+| Time added per request | about 100 to 145 ms at the 95th percentile for 4K tokens of new text; earlier turns are cached |
 
 No language model judges spans at request time. The Apple on-device model and Qwen3-4B were both measured and dropped: deterministic refinement removed more false positives, faster.
 
@@ -141,9 +142,10 @@ No language model judges spans at request time. The Apple on-device model and Qw
 ## Development
 
 ```sh
-uv sync --all-extras
+uv sync
 uv run pytest                                # unit, property, proxy, streaming and launcher tests
-uv run sotto bench --detectors rules,rules+pf-8bit --data bench/data   # needs `uv run python bench/gen.py` first
+uv run python bench/gen.py                   # generate the benchmark datasets
+uv run sotto bench --detectors rules,rules+pf-serve --data bench/data   # see bench/README.md
 ```
 
 The design and milestones are in [SPEC.md](docs/SPEC.md).

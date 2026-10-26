@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # build.sh [out-dir]: pf-serve for macOS on Apple silicon (Metal), from pinned sources.
+# The default out-dir, ~/.local/share/sotto/bin, is where sotto looks for it.
 #
 # pf-serve runs OpenAI Privacy Filter on privacy-filter.cpp (ggml) for sotto's L2 detector
 # (src/sotto/detect/pfserve.py). pf-serve.cpp, CMakeLists.txt and patches/ come from magpie
@@ -14,7 +15,8 @@ PF_REPO=https://github.com/localai-org/privacy-filter.cpp
 PF_COMMIT=735a6c28607ee82afc3a670383f41b55266a3b9a
 
 here=$(cd "$(dirname "$0")" && pwd)
-out=$(mkdir -p "${1:-$here/dist}" && cd "${1:-$here/dist}" && pwd)
+dest=${1:-${XDG_DATA_HOME:-$HOME/.local/share}/sotto/bin}
+out=$(mkdir -p "$dest" && cd "$dest" && pwd)
 work=${PF_WORK:-$here/.work}
 src=$work/privacy-filter.cpp
 mkdir -p "$work"

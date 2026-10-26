@@ -14,10 +14,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# L2: OpenAI Privacy Filter on MLX (default) or PyTorch/MPS (comparison).
-pf = [
+# Benchmark only: OpenAI Privacy Filter on MLX or PyTorch/MPS, compared with pf-serve (the runtime).
+mlx = [
     "mlx>=0.31",
-    "mlx-lm>=0.28",  # imported by mlx-embeddings' privacy-filter model; runs the opt-in L3 judge
+    "mlx-lm>=0.28",  # imported by mlx-embeddings' privacy-filter model; runs the Qwen judge experiment
     "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings@9b28270be81211f2b8daed0041aec65ea5dc4b28",  # privacy-filter support is unreleased (PyPI 0.1.0 lacks it)
     "numpy>=2.0",
     "tokenizers>=0.21",

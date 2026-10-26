@@ -157,7 +157,9 @@ def wrapper_env(tmp_path, monkeypatch):
     """A fake claude, a mock Anthropic on a real port, and a private HOME for the wrapper."""
     import shutil
 
-    real_hf = os.environ.get("HF_HUB_CACHE") or os.path.expanduser("~/.cache/huggingface/hub")
+    from sotto.detect.pfserve import find_binary, find_model
+
+    model_env = {k: str(v) for k, v in (("SOTTO_PF_SERVE", find_binary()), ("SOTTO_PF_MODEL", find_model())) if v}
     monkeypatch.setattr(launch, "RUNTIME_FILE", tmp_path / "test-runtime.json")
     mock = selftest.MockUpstream()
     upstream = launch.BackgroundServer(_App(mock.app))
@@ -168,7 +170,7 @@ def wrapper_env(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     env = {k: v for k, v in os.environ.items() if k not in launch.BYPASS_KEYS}
-    env.update(HOME=str(home), HF_HUB_CACHE=real_hf, HF_HUB_OFFLINE="1", CANARY=selftest.make_canary(),
+    env.update(HOME=str(home), **model_env, CANARY=selftest.make_canary(),
                OUT=str(tmp_path / "out.json"), ANTHROPIC_BASE_URL=f"http://127.0.0.1:{upstream.port}")
     wrapper = shutil.which("sotto-claude-wrapper", path=os.path.dirname(sys.executable))
     yield {"env": env, "fake": str(fake), "mock": mock, "home": home, "out": tmp_path / "out.json", "wrapper": wrapper}

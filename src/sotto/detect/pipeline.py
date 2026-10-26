@@ -186,14 +186,15 @@ def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=
     rules.allowlist.extend(allow_strings, allow_patterns)
     if rules_only:
         return Pipeline(rules, None, pii=pii)
-    try:
-        from .pf import PrivacyFilter
+    from .pfserve import PfServe, PfServeError, find_binary, find_model
 
-        pf = PrivacyFilter()
-    except Exception as e:  # missing extra, missing weights, MLX failure
-        raise ModelUnavailable(
-            "the Privacy Filter model is not available "
-            f"({type(e).__name__}). Install `sotto[pf]` and download "
-            "mlx-community/openai-privacy-filter-8bit, or pass --rules-only."
-        ) from e
+    binary, model = find_binary(), find_model()
+    if binary is None:
+        raise ModelUnavailable("pf-serve is not installed: build it with native/pf-serve/build.sh, or pass --rules-only.")
+    if model is None:
+        raise ModelUnavailable("the Privacy Filter model is not downloaded: run `sotto setup`, or pass --rules-only.")
+    try:
+        pf = PfServe(binary, model)
+    except (PfServeError, OSError) as e:
+        raise ModelUnavailable(f"the Privacy Filter model did not load ({e}); pass --rules-only to run without it.") from e
     return Pipeline(rules, pf, pii=pii)

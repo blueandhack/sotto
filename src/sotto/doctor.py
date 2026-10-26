@@ -25,7 +25,7 @@ def run() -> int:
     r: list[tuple[str, str]] = []
     mac = platform.mac_ver()[0]
     major = int(mac.split(".")[0]) if mac else 0
-    _check(r, OK if major >= 14 else FAIL, f"macOS {mac or 'unknown'} (MLX needs 14 or later)")
+    _check(r, OK if major >= 14 else FAIL, f"macOS {mac or 'unknown'} (14 or later)")
     _check(r, OK if platform.machine() == "arm64" else FAIL, f"CPU {platform.machine()} (Apple silicon required)")
     _check(r, OK if sys.version_info >= (3, 12) else FAIL, f"Python {platform.python_version()}")
 
@@ -36,23 +36,26 @@ def run() -> int:
         cfg = None
         _check(r, FAIL, f"config: {e}")
 
-    try:
-        import mlx.core  # noqa: F401
-        import mlx_embeddings  # noqa: F401
+    from .detect.pfserve import PfServe, find_binary, find_model
 
-        _check(r, OK, "L2 runtime installed (sotto[pf])")
-        from .detect.pipeline import default_pipeline
-
-        # Synthetic canary in GitHub's token format.
-        canary = "ghp_" + "Zq8vX2mN4pL7kR9tY3wB6cF1hJ5dG0sAe7Qw"
-        text = f"the deploy token is {canary} for now"
-        pipeline = default_pipeline(pii=bool(cfg and cfg.pii))
-        found = any(text[s.start : s.end] == canary for s in pipeline.pf.detect(text) + pipeline.rules.detect(text))
-        _check(r, OK if found else FAIL, "L2 model loads and catches a canary" if found else "L2 model loaded but missed the canary")
-    except ImportError:
-        _check(r, FAIL, "L2 runtime missing: install sotto[pf]")
-    except Exception as e:
-        _check(r, FAIL, f"L2 model unavailable ({type(e).__name__}); download mlx-community/openai-privacy-filter-8bit")
+    binary, model = find_binary(), find_model()
+    _check(r, OK if binary else FAIL, f"pf-serve {binary}" if binary else "pf-serve missing: run native/pf-serve/build.sh")
+    _check(r, OK if model else FAIL, f"model {model}" if model else "model missing: run `sotto setup`")
+    if binary and model:
+        pf = None
+        try:
+            pf = PfServe(binary, model)
+            # Synthetic canary in a prose sentence, where only the model (not a rule) can catch it.
+            canary = "Zq8vX2mN4pL7kR9t"
+            text = f"the vpn password for the lab is {canary}, don't share it"
+            found = any(text[s.start : s.end] == canary for s in pf.detect(text))
+            _check(r, OK if found else FAIL, f"model runs on {pf.device} and catches a canary" if found
+                   else "model loaded but missed the canary")
+        except Exception as e:
+            _check(r, FAIL, f"model did not run ({e})")
+        finally:
+            if pf:
+                pf.close()
 
     try:
         import keyring

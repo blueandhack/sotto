@@ -169,7 +169,7 @@ struct SampleFeed {
     init() {
         let now = Date().timeIntervalSince1970
         snap.started = now - 5400
-        snap.mode = "claude"; snap.pii = true; snap.detector = "rules+pf-mlx-8bit"; snap.version = "0.0.1"
+        snap.mode = "claude"; snap.pii = true; snap.detector = "rules+pf-serve"; snap.version = "0.0.1"
         snap.upstream = "https://api.anthropic.com"
         let weights: [(String, Int)] = [("SECRET", 5), ("EMAIL", 3), ("PERSON", 3), ("PHONE", 1), ("ACCOUNT", 1)]
         for i in stride(from: 89, through: 0, by: -1) {  // more than the hour on screen, like the real feed
