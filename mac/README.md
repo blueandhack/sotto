@@ -27,7 +27,34 @@ open build/Sotto.app
 
 - **Preview** shows animated sample data, clearly labeled, when sotto is not running.
 - `Sotto --snapshot dir` renders every page in light and dark to PNGs and exits; with `--live` it renders the overview from the running proxy.
-- Distribution needs a *Developer ID Application* certificate and notarization (M6). Development-signed builds run only on this Mac.
+- Development-signed builds run only on this Mac. For other Macs, see Releasing.
+
+## Releasing
+
+A release is a notarized `Sotto-<version>.dmg` on the repository's GitHub Releases page. Apple's notarization is what lets the app open on other Macs without a warning; it needs a paid Apple Developer membership.
+
+**Once per Mac:**
+
+1. **Developer ID certificate.** Xcode › Settings › Accounts › your team › Manage Certificates › **+** › *Developer ID Application* (only the account holder can create one). Check: `security find-identity -v -p codesigning` lists `Developer ID Application: …`.
+2. **Notary credentials**, kept in the Keychain. Create an app-specific password at account.apple.com › Sign-In and Security, then:
+   ```sh
+   xcrun notarytool store-credentials sotto-notary --apple-id you@example.com --team-id ABCDE12345
+   ```
+   It asks for the password and checks it with Apple.
+
+**Each release:**
+
+```sh
+# 1. bump `version` in pyproject.toml, commit
+mac/release.sh                                  # tests, build, Developer ID signature, notarize, staple -> dist/
+git tag -s v0.1.0 -m "sotto 0.1.0" && git push origin main v0.1.0
+gh release create v0.1.0 dist/Sotto-0.1.0.dmg dist/Sotto-0.1.0.dmg.sha256 \
+  --verify-tag --title "sotto 0.1.0" --generate-notes --prerelease
+```
+
+`release.sh` refuses an uncommitted tree, notarizes the app and then the DMG, staples both tickets (so the app opens offline after it is copied out), and ends by asking Gatekeeper (`spctl`) for the verdict another Mac would reach. A rejected submission prints Apple's log. `SKIP_NOTARIZE=1 ALLOW_DIRTY=1 mac/release.sh` runs every other step with your development identity, to test it.
+
+Users download the DMG, drag Sotto into Applications, open it, and follow Settings › Setup. Drop `--prerelease` once sotto leaves pre-release. Release builds happen on a Mac you control rather than in CI, so the signing certificate never leaves it.
 
 **Logos.** Claude Code and the Anthropic API appear with their official logos (`Brand/`, from Anthropic's [press kit](https://www.anthropic.com/press-kit), used unmodified to identify those services; see [Brand/NOTICE.md](Brand/NOTICE.md)). Claude, Claude Code and Anthropic are trademarks of Anthropic, PBC; sotto is an independent project, not affiliated with or endorsed by Anthropic. "This Mac" shows a laptop or a Mac mini, depending on whether the Mac has a battery.
 

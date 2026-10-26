@@ -39,7 +39,7 @@ Claude Code ──▶ sotto (on your Mac) ──▶ Anthropic API
 
 ### The Mac app (everything included)
 
-Build `Sotto.app` (see [mac/README.md](mac/README.md)), open it, and follow **Settings › Setup**: download the model, start the background service, and switch on **Protect Claude Code**. The app bundles sotto, its Python runtime and pf-serve; nothing else needs installing. Every Claude Code session then goes through sotto: terminal, VS Code and the desktop app.
+Download `Sotto-<version>.dmg` from the [Releases](https://github.com/blueandhack/sotto/releases) page (or build it: [mac/README.md](mac/README.md)), drag Sotto into Applications, open it, and follow **Settings › Setup**: download the model, start the background service, and switch on **Protect Claude Code**. The app bundles sotto, its Python runtime and pf-serve; nothing else needs installing. Every Claude Code session then goes through sotto: terminal, VS Code and the desktop app.
 
 ### The command line
 

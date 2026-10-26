@@ -22,5 +22,9 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: swift build -c release
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      # The whole app with its bundled engine, signed ad-hoc: catches bundling breakage on every change.
+      - run: ./build-app.sh
+        working-directory: mac
+      - run: build/Sotto.app/Contents/Resources/sotto --help
         working-directory: mac
