@@ -52,9 +52,12 @@ def make_detector(spec: str):
 
             return PrivacyFilter("mlx", model="OpenMed/privacy-filter-nemotron", name="pf-nemotron")
         if name == "pf-serve":
-            from .detect.pfserve import PfServe
+            from .detect.pfserve import PfServe, find_binary, find_model
 
-            return PfServe(os.environ["SOTTO_PF_SERVE"], os.environ["SOTTO_PF_MODEL"])
+            binary, model = find_binary(), find_model()
+            if not (binary and model):
+                raise RuntimeError("pf-serve or its model is missing: run native/pf-serve/build.sh and `sotto setup`")
+            return PfServe(binary, model)
         if name.startswith("pf"):
             from .detect.pf import PrivacyFilter
 

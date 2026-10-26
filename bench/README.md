@@ -20,6 +20,6 @@ uv run sotto bench --detectors rules,rules+pf --data /tmp/sotto-holdout
 - Detection runs offline (`HF_HUB_OFFLINE=1`); models must already be downloaded.
 - The PyTorch comparison (`pf-torch`) also needs `snapshot_download('openai/privacy-filter')`.
 
-The runtime is pf-serve (`pf-serve`: `SOTTO_PF_SERVE` and `SOTTO_PF_MODEL` point at the binary and the GGUF model). The MLX and PyTorch detectors are kept for comparison and need `uv sync --extra mlx` (or `--extra pf-torch`).
+The runtime is pf-serve (`pf-serve`), found where sotto finds it (`SOTTO_PF_SERVE` and `SOTTO_PF_MODEL` override). The MLX and PyTorch detectors are kept for comparison and need `uv sync --extra mlx` (or `--extra pf-torch`).
 
 Detectors: `rules`, `pf-serve`, `pf` (MLX bf16), `pf-8bit`, `pf-torch`, `afm-cli`, `afm-sdk`, and pipelines such as `rules+pf`, `rules+pf+qwen:pii` (the opt-in Qwen judge reviews personal-data spans; it needs `snapshot_download("mlx-community/Qwen3-4B-Instruct-2507-4bit")`), with flags `:pii` (personal data on) and `:raw` (no L2 span refinement).
