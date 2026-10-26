@@ -107,7 +107,7 @@ class Proxy:
             return api_error(400, "invalid_request_error", "request body is not a JSON object; nothing was sent")
         started = time.perf_counter()
         try:
-            masked, counts = await anyio.to_thread.run_sync(self._redact, body)
+            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body)
         except Exception as e:  # any detector or redaction failure: block, never send raw
             log.error("blocked %s: scan failed (%s)", path, type(e).__name__)
             self.stats.record(path, "blocked", 500)
@@ -118,11 +118,11 @@ class Proxy:
         headers = self._headers(request)
         try:
             if masked.get("stream") and path == "/v1/messages":
-                return await self._stream(url, headers, payload, path, scan_ms, counts)
+                return await self._stream(url, headers, payload, path, scan_ms, counts, new)
             resp = await self.client.post(url, headers=headers, content=payload)
         except httpx.HTTPError as e:
             log.error("upstream error on %s: %s", path, type(e).__name__)
-            self.stats.record(path, "upstream_error", 502, scan_ms, counts)
+            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new)
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
         restored = Counter()
         content = resp.content
@@ -132,21 +132,24 @@ class Proxy:
                 content = json.dumps(await anyio.to_thread.run_sync(self._restore, data, restored), ensure_ascii=False).encode()
             except ValueError:
                 pass  # not JSON: pass it through as it came
-        self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored)
+        self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new)
         log.info("%s -> %d redacted=%s restored=%s scan=%.0fms", path, resp.status_code, dict(counts), dict(restored), scan_ms)
         return Response(content, status_code=resp.status_code, headers=self._response_headers(resp))
 
-    def _redact(self, body: dict) -> tuple[dict, Counter]:
+    def _redact(self, body: dict) -> tuple[dict, Counter, int]:
+        """The masked body, spans masked per type, and how many values were masked for the first
+        time (the rest were masked in earlier turns: Claude Code resends the whole conversation)."""
         with self._scan_lock:
             self.redactor.counts.clear()
+            before = len(self.redactor.vault)
             masked = self.redactor.redact_request(body)
-            return masked, Counter(self.redactor.counts)
+            return masked, Counter(self.redactor.counts), len(self.redactor.vault) - before
 
     def _restore(self, data: dict, counts: Counter) -> dict:
         with self._scan_lock:
             return restore_response(data, self.redactor.vault, self.policy, counts)
 
-    async def _stream(self, url, headers, payload, path, scan_ms, counts) -> Response:
+    async def _stream(self, url, headers, payload, path, scan_ms, counts, new=0) -> Response:
         req = self.client.build_request("POST", url, headers=headers, content=payload)
         resp = await self.client.send(req, stream=True)
         restored = Counter()
@@ -165,7 +168,7 @@ class Proxy:
                         yield tail
             finally:
                 await resp.aclose()
-                self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored)
+                self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new)
                 log.info("%s -> %d (stream) redacted=%s restored=%s scan=%.0fms", path, resp.status_code,
                          dict(counts), dict(restored), scan_ms)
 

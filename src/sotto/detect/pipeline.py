@@ -29,6 +29,9 @@ _KEYWORD_BEFORE = re.compile(r"(?i)\b(?:api[ _-]?key|key|token|secret|passw(?:or
 # account numbers, log timestamps as dates, API paths as URLs.
 _ACCOUNT_SHAPE = re.compile(r"(?:\d[ -]?){8,19}|[A-Z]{2}\d{2}(?: ?[A-Z0-9]){10,30}")  # card/bank digits, IBAN
 _ACCOUNT_KEYWORD = re.compile(r"(?i)\b(?:account|acct|iban|card|routing|bank|ssn|social security|tax id)\b")
+# A number followed by a unit is a count or a size ("14987873 tokens left", "66060825 bytes").
+_UNIT_AFTER = re.compile(r"(?i)\s?(?:tokens?|bytes?|[KMGT]i?B|B|ms|s|sec(?:onds?)?|chars?|characters?|lines?|rows?|records?"
+                         r"|items?|requests?|users?|files?|words?|times|calls?|steps?|px|%)\b")
 _TIME_OF_DAY = re.compile(r"\d{1,2}:\d{2}(?::\d{2})?")
 _RESERVED_EMAIL = re.compile(r"(?i)@(?:[\w-]+\.)*(?:example\.(?:com|net|org)|test|invalid|localhost)$")  # RFC 2606
 _ROLE_EMAIL = re.compile(r"(?i)^(?:no-?reply|do-?not-?reply|notifications?|postmaster|mailer-daemon)@")  # not a person
@@ -168,7 +171,13 @@ class Pipeline:
         value = text[span.start : span.end]
         before = text[max(0, span.start - 40) : span.start]
         if span.type == "ACCOUNT":
-            return bool(_ACCOUNT_SHAPE.fullmatch(value) or _ACCOUNT_KEYWORD.search(before))
+            after = text[span.end : span.end + 16]
+            if _UNIT_AFTER.match(after) or text[span.start - 1 : span.start] == "." or after[:1] == "." and after[1:2].isdigit():
+                return False  # a count, a size, or part of a decimal number
+            digits = sum(c.isdigit() for c in value)
+            keyword = bool(_ACCOUNT_KEYWORD.search(before))
+            # Short runs of digits are everywhere (sizes, ids, counters): only after an account word.
+            return keyword or bool(_ACCOUNT_SHAPE.fullmatch(value)) and (digits >= 10 or not value.isdigit())
         if span.type == "DATE":
             # A personal date is a date of birth; today's date or a release date is not.
             return not _TIME_OF_DAY.search(value) and bool(_BIRTH_BEFORE.search(text[max(0, span.start - 60) : span.start]))

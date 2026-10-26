@@ -143,7 +143,8 @@ class RulesDetector:
                 start, end = m.span(rule.group)
                 if start < 0 or start == end:
                     continue
-                if self.looks_like_placeholder(m.group(rule.group), rule.filters):
+                # Code closes calls after a value (`flag=False))`): judge the value without them.
+                if self.looks_like_placeholder(m.group(rule.group).rstrip(")]}>"), rule.filters):
                     continue
                 if rule.prose_guard and _PROSE_WORD.fullmatch(m.group(rule.group)) and _PROSE_NEXT.match(text, end):
                     continue

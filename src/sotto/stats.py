@@ -38,10 +38,11 @@ class Stats:
         self.events: deque[dict] = deque(maxlen=recent)
         self.scanned = 0  # requests that went through the detectors
         self.with_findings = 0  # of those, requests where something was masked
+        self.with_new = 0  # of those, requests that brought a value never masked before
         self.minutes: deque[dict] = deque(maxlen=180)  # per-minute buckets for the timeline
 
     def record(self, path: str, outcome: str, status: int, scan_ms: float | None = None,
-               redacted: Counter | None = None, restored: Counter | None = None) -> None:
+               redacted: Counter | None = None, restored: Counter | None = None, new: int = 0) -> None:
         with self._lock:
             self.requests[outcome] += 1
             self.redacted.update(redacted or {})
@@ -50,6 +51,7 @@ class Stats:
                 self.scan_ms.append(scan_ms)
                 self.scanned += 1
                 self.with_findings += bool(redacted)
+                self.with_new += new > 0
             minute = int(time.time() // 60) * 60
             if not self.minutes or self.minutes[-1]["t"] != minute:
                 self.minutes.append({"t": minute, "requests": 0, "masked": Counter(), "restored": 0, "blocked": 0})
@@ -61,7 +63,7 @@ class Stats:
             self.events.append({
                 "ts": round(time.time(), 3), "path": path, "outcome": outcome, "status": status,
                 "scan_ms": None if scan_ms is None else round(scan_ms, 1),
-                "redacted": dict(redacted or {}), "restored": dict(restored or {}),
+                "redacted": dict(redacted or {}), "restored": dict(restored or {}), "new": new,
             })
 
     def snapshot(self, **extra) -> dict:
@@ -75,7 +77,8 @@ class Stats:
                 "started": self.started, "uptime_s": round(time.time() - self.started, 1),
                 "requests": dict(self.requests), "redacted": dict(self.redacted), "restored": dict(self.restored),
                 "funnel": {"requests": sum(self.requests.values()), "scanned": self.scanned,
-                           "with_findings": self.with_findings, "masked": sum(self.redacted.values()),
+                           "with_findings": self.with_findings, "with_new": self.with_new,
+                           "masked": sum(self.redacted.values()),
                            "restored": sum(self.restored.values())},
                 "timeline": [{**b, "masked": dict(b["masked"])} for b in self.minutes],
                 "scan_ms": {"p50": pct(0.5), "p95": pct(0.95), "n": len(lat)},

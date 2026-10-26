@@ -255,7 +255,7 @@ private struct FlowMap {
         let restore = nodes["restore"]!.rect, claude = nodes["claude"]!.rect, anth = nodes["anthropic"]!.rect
         pill(&context, "\(clean.compact) clean · sent as is", at: CGPoint(x: (scan.maxX + anth.minX) / 2, y: yTop))
         // Labels sit on their own lanes, so they never cover another node.
-        pill(&context, "\(s.funnel.withFindings.compact) sensitive", at: lanes["sensitive"]!.point(at: lanes["sensitive"]!.length / 2))
+        pill(&context, "\(s.funnel.withFindings.compact) sensitive" + (s.funnel.withNew.map { " · \($0.compact) new" } ?? ""), at: lanes["sensitive"]!.point(at: lanes["sensitive"]!.length / 2))
         pill(&context, "placeholders only", at: lanes["placeholders"]!.point(at: lanes["placeholders"]!.length * 0.42))
         let b = lanes["blocked"]!.point(at: lanes["blocked"]!.length * 0.38)
         pill(&context, "\(s.blocked.compact) blocked", at: CGPoint(x: b.x - 38, y: b.y),

@@ -182,7 +182,8 @@ struct OverviewPage: View {
                 KPI(title: "Unique values masked", value: (s.vaultSize ?? 0).compact, icon: "lock.fill",
                     footnote: "\(s.maskedTotal.compact) masks applied, incl. resends")
                 KPI(title: "Requests scanned", value: s.funnel.scanned.compact, icon: "doc.text.magnifyingglass",
-                    footnote: "\(percent(s.funnel.withFindings, of: s.funnel.scanned)) carried sensitive data")
+                    footnote: s.funnel.withNew.map { "\($0.compact) brought new sensitive values" }
+                        ?? "\(percent(s.funnel.withFindings, of: s.funnel.scanned)) carried sensitive data")
                 KPI(title: "Blocked before leaving", value: s.blocked.compact, icon: "hand.raised.fill",
                     footnote: "fail-closed: never sent raw", tint: s.blocked > 0 ? Theme.danger : Theme.accent)
                 KPI(title: "Scan time (p95)", value: s.scanMs.p95.map { String(format: "%.0f ms", $0) } ?? "—", icon: "timer",
@@ -383,15 +384,17 @@ struct ActivityTable: View {
 
     private func row(_ e: Snapshot.Event) -> some View {
         let blocked = e.outcome == "blocked" || e.outcome == "rejected"
+        let repeated = e.new == 0 && !e.redacted.isEmpty
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(e.date, format: .dateTime.hour().minute().second())
                     .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 70, alignment: .leading)
                 HStack(spacing: 5) {
-                    Image(systemName: blocked ? "hand.raised.fill" : (e.redacted.isEmpty ? "checkmark.circle" : "eye.slash"))
-                    Text(blocked ? "Blocked" : (e.redacted.isEmpty ? "Clean" : "Masked"))
+                    Image(systemName: blocked ? "hand.raised.fill" : (e.redacted.isEmpty ? "checkmark.circle" : (repeated ? "arrow.clockwise" : "eye.slash")))
+                    Text(blocked ? "Blocked" : (e.redacted.isEmpty ? "Clean" : (repeated ? "Re-masked" : "Masked")))
                 }
-                .font(.system(size: 11.5)).foregroundStyle(blocked ? Theme.danger : (e.redacted.isEmpty ? Theme.secondary : Theme.accent))
+                .help(repeated ? "Only values masked in earlier turns: Claude Code resends the whole conversation" : "")
+                .font(.system(size: 11.5)).foregroundStyle(blocked ? Theme.danger : (e.redacted.isEmpty || repeated ? Theme.secondary : Theme.accent))
                 .frame(width: 90, alignment: .leading)
                 if !compact {
                     Text(e.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.text).lineLimit(1)

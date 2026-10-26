@@ -40,6 +40,8 @@ def test_connection_string_marks_only_the_password(rules):
     "postgres://user:password@localhost:5432/mydb",
     "SOTTO_SECRET_7f3a9c2e appears in a later turn",
     '"integrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="',
+    "len(tok.encode(text, add_special_tokens=False))",  # a keyword argument, closed by brackets
+    "secret_ref = None]",
 ])
 def test_hard_negatives(rules, text):
     assert rules.detect(text) == []
@@ -113,6 +115,11 @@ def test_refine_narrows_url_to_password(rules):
 
 @pytest.mark.parametrize("text, value, kind, keep", [
     ("request_id=0d6dc8cff6403ab9", "0d6dc8cff6403ab9", "ACCOUNT", False),
+    ("<total_tokens>14987873 tokens left</total_tokens>", "14987873", "ACCOUNT", False),
+    ("-rw-r--r--  1 dev  staff  66060825 Oct 26 00:40 Sotto.dmg", "66060825", "ACCOUNT", False),
+    ('"f1": 0.9187279151943463', "9187279151943463", "ACCOUNT", False),
+    ("wire it to account 48213907 today", "48213907", "ACCOUNT", True),
+    ("card 4111 1111 1111 1111 exp 04/29", "4111 1111 1111 1111", "ACCOUNT", True),
     ("refund to GB33BUKB20201555555555", "GB33BUKB20201555555555", "ACCOUNT", True),
     ("acct 0012345678 at the credit union", "0012345678", "ACCOUNT", True),
     ("2026-10-21T09:14:03.112Z INFO", "2026-10-21T09:14:03.112", "DATE", False),

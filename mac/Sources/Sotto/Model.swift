@@ -6,6 +6,9 @@ import Observation
 struct Snapshot: Decodable, Sendable {
     struct Funnel: Decodable, Sendable {
         var requests = 0, scanned = 0, withFindings = 0, masked = 0, restored = 0
+        /// Requests that brought a value never masked before. Claude Code resends the whole
+        /// conversation, so after one sensitive value nearly every request carries it again.
+        var withNew: Int?
     }
     struct Minute: Decodable, Sendable, Identifiable {
         var t: Double
@@ -25,6 +28,8 @@ struct Snapshot: Decodable, Sendable {
         var scanMs: Double?
         var redacted: [String: Int]
         var restored: [String: Int]
+        /// Values masked for the first time in this request; the rest came from earlier turns.
+        var new: Int?
         var id: Double { ts }
         var date: Date { Date(timeIntervalSince1970: ts) }
     }
@@ -188,6 +193,7 @@ struct SampleFeed {
         snap.requests = ["forwarded": snap.funnel.requests - 2, "blocked": 1, "rejected": 1]
         snap.funnel.scanned = snap.funnel.requests - 2
         snap.funnel.withFindings = Int(Double(snap.funnel.scanned) * 0.34)
+        snap.funnel.withNew = Int(Double(snap.funnel.scanned) * 0.08)
         snap.funnel.masked = snap.maskedTotal
         snap.funnel.restored = snap.restoredTotal
         let masked = snap.maskedTotal
@@ -206,7 +212,8 @@ struct SampleFeed {
         let blocked = Int.random(in: 0..<40) == 0
         return .init(ts: ts, path: "/v1/messages", outcome: blocked ? "blocked" : "forwarded", status: blocked ? 500 : 200,
                      scanMs: blocked ? nil : Double.random(in: 6...120), redacted: redacted,
-                     restored: redacted.isEmpty || Bool.random() ? [:] : ["SECRET": 1])
+                     restored: redacted.isEmpty || Bool.random() ? [:] : ["SECRET": 1],
+                     new: redacted.isEmpty || Int.random(in: 0..<4) > 0 ? 0 : 1)
     }
 
     mutating func next() -> Snapshot {
@@ -221,6 +228,7 @@ struct SampleFeed {
             snap.requests[e.outcome, default: 0] += 1
             if e.scanMs != nil { snap.funnel.scanned += 1 }
             if !e.redacted.isEmpty { snap.funnel.withFindings += 1 }
+            if (e.new ?? 0) > 0 { snap.funnel.withNew = (snap.funnel.withNew ?? 0) + 1 }
             for (k, v) in e.redacted {
                 snap.redacted[k, default: 0] += v; snap.funnel.masked += v
                 snap.detection["masked", default: 0] += v

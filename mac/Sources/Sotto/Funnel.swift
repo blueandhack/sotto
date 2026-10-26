@@ -82,11 +82,17 @@ private struct Band: Shape {
 extension Snapshot {
     private static func shade(_ i: Int, of n: Int) -> Color { Theme.accent.opacity(1 - Double(i) / Double(max(n, 1)) * 0.45) }
 
-    /// Requests: received, scanned, and those that carried something sensitive.
+    /// Requests: received, scanned, those that carried something sensitive, and those that
+    /// brought a value never masked before (the rest re-sent earlier turns).
     var requestStages: [FunnelStage] {
-        [FunnelStage(label: "Requests received", value: contentRequests, color: Self.shade(0, of: 3)),
-         FunnelStage(label: "Scanned before leaving", value: funnel.scanned, color: Self.shade(1, of: 3)),
-         FunnelStage(label: "Carried sensitive data", value: funnel.withFindings, color: Self.shade(2, of: 3))]
+        let n = funnel.withNew == nil ? 3 : 4
+        var stages = [FunnelStage(label: "Requests received", value: contentRequests, color: Self.shade(0, of: n)),
+                      FunnelStage(label: "Scanned before leaving", value: funnel.scanned, color: Self.shade(1, of: n)),
+                      FunnelStage(label: "Carried sensitive data", value: funnel.withFindings, color: Self.shade(2, of: n))]
+        if let new = funnel.withNew {
+            stages.append(FunnelStage(label: "Brought new sensitive data", value: new, color: Self.shade(3, of: n)))
+        }
+        return stages
     }
 
     /// Detection: raw candidates from rules and the model, narrowed by refinement and the allowlist.

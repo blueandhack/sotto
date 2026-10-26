@@ -112,3 +112,22 @@ def test_unicode_survives_the_round_trip():
 
     r = anyio.run(go)
     assert r.status_code == 200 and json.loads(r.content)["content"][0]["text"].startswith("The token")
+
+
+def test_stats_tell_new_values_from_ones_masked_in_earlier_turns():
+    canary = selftest.make_canary()
+
+    async def go():
+        _, client = make()
+        first = body_with(canary)
+        await client.post("/v1/messages", json=first)
+        # The next turn resends the conversation: the same value, nothing new.
+        second = {**first, "messages": first["messages"] + [{"role": "assistant", "content": "ok"},
+                                                            {"role": "user", "content": "thanks"}]}
+        await client.post("/v1/messages", json=second)
+        r = await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})
+        return r.json()
+
+    stats = anyio.run(go)
+    assert stats["funnel"]["with_findings"] == 2 and stats["funnel"]["with_new"] == 1
+    assert [e["new"] for e in stats["recent"]] == [1, 0]
