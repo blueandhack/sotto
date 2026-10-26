@@ -176,20 +176,3 @@ def doctor() -> None:
     from .doctor import run
 
     raise typer.Exit(run())
-
-
-@app.command()
-def bench(
-    detectors: str = typer.Option(None, help="Comma-separated detectors. Default: all of them."),
-    data: Path = typer.Option(Path("bench/data"), help="Directory of labeled *.jsonl files, or one file."),
-    out: Path = typer.Option(Path("bench/results"), help="Where to write the JSON results and Markdown summary."),
-    repeat: int = typer.Option(3, help="Timed runs per record for local detectors (AFM always runs once)."),
-    limit: int = typer.Option(0, help="Use only the first N records of each file (0 = all)."),
-) -> None:
-    """Phase 0 benchmark: accuracy, latency and memory per detector."""
-    from . import bench as b
-
-    names = [d.strip() for d in (detectors or b.DEFAULT_DETECTORS).split(",") if d.strip()]
-    json_path, md_path = b.run(names, data, out, repeat=repeat, limit=limit or None)
-    typer.echo(md_path.read_text())
-    typer.echo(f"Wrote {json_path} and {md_path}")

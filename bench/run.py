@@ -1,4 +1,6 @@
-"""Phase 0 benchmark: which detectors are accurate and fast enough for the request path.
+"""The benchmark: which detectors are accurate and fast enough for the request path.
+
+    uv run python bench/run.py --detectors rules,rules+pf-serve --data bench/data
 
 Each detector runs in its own subprocess so cold start and peak memory are measured cleanly.
 Results never contain sensitive values: spans are offsets, and reports show masked previews.
@@ -18,9 +20,10 @@ from datetime import datetime
 from importlib import metadata
 from pathlib import Path
 
-from .detect import TYPES
+from sotto.detect import TYPES
+from sotto.detect.pipeline import Pipeline
 
-DEFAULT_DETECTORS = "rules,pf,pf-8bit,rules+pf,rules+pf-8bit,rules+pf-8bit:pii"
+DEFAULT_DETECTORS = "rules,rules+pf-serve,rules+pf-serve:pii"
 
 # Starting targets from the spec; adjust after the first run.
 TARGET_SECRET_RECALL = 0.98
@@ -34,6 +37,36 @@ SCOPES = ("secrets", "all")
 # --- Detector construction (runs in the worker) -------------------------------------
 
 
+class CandidatePipeline(Pipeline):
+    """Benchmark candidates on top of the shipped pipeline: more secret detectors unioned in
+    (`extra`), or a separate personal-data model that replaces the model's own (`pii_detector`)."""
+
+    def __init__(self, rules, pf, extra=(), pii_detector=None, **kw):
+        super().__init__(rules, pf, **kw)
+        self.extra, self.pii_detector = list(extra), pii_detector
+        base, _, flags = self.name.partition(":")
+        parts = base.split("+")
+        parts[1:1] = [d.name for d in self.extra]
+        if pii_detector:
+            parts.append(pii_detector.name)
+        self.name = "+".join(parts) + (":" + flags if flags else "")
+
+    def model_spans(self, text):
+        out = [s for d in self.extra for s in d.detect(text)]
+        if self.pii_detector is None:
+            return out + super().model_spans(text)
+        pii, self.pii = self.pii, False  # the model reports secrets only
+        try:
+            out += super().model_spans(text)
+        finally:
+            self.pii = pii
+        if self.pii:
+            found = [s for s in self.pii_detector.detect(text) if s.type != "SECRET"]
+            self.funnel["candidates_model"] += len(found)
+            out += found
+        return out
+
+
 def make_detector(spec: str):
     """`rules`, `pf[-8bit|-torch|-serve]`, `afm-cli`, `afm-sdk`, or a pipeline such as `rules+pf-8bit:pii`.
 
@@ -44,36 +77,35 @@ def make_detector(spec: str):
     parts = name.split("+")
     if len(parts) == 1:
         if name == "rules":
-            from .detect.rules import RulesDetector
+            from sotto.detect.rules import RulesDetector
 
             return RulesDetector()
         if name == "pf-nemotron":
-            from .detect.pf import PrivacyFilter
+            from pf_mlx import PrivacyFilter
 
             return PrivacyFilter("mlx", model="OpenMed/privacy-filter-nemotron", name="pf-nemotron")
         if name == "pf-serve":
-            from .detect.pfserve import PfServe, find_binary, find_model
+            from sotto.detect.pfserve import PfServe, find_binary, find_model
 
             binary, model = find_binary(), find_model()
             if not (binary and model):
                 raise RuntimeError("pf-serve or its model is missing: run native/pf-serve/build.sh and `sotto setup`")
             return PfServe(binary, model)
         if name.startswith("pf"):
-            from .detect.pf import PrivacyFilter
+            from pf_mlx import PrivacyFilter
 
             backend = {"pf": "mlx", "pf-8bit": "mlx-8bit", "pf-torch": "torch"}[name]
             return PrivacyFilter(backend)
         if name in ("gliner2", "gliner-nvidia", "credsweeper", "piiranha"):
-            from .detect import alt
+            import alt
 
             return {"gliner2": alt.GLiNER2Detector, "gliner-nvidia": alt.GLiNERDetector, "credsweeper": alt.CredSweeperDetector, "piiranha": alt.PiiranhaDetector}[name]()
         if name in ("afm-cli", "afm-sdk"):
-            from .detect.afm import AFMExtractor
+            from afm import AFMExtractor
 
             return AFMExtractor(name.removeprefix("afm-"))
         raise ValueError(f"unknown detector {spec!r}")
-    from .detect.pipeline import Pipeline
-    from .detect.rules import RulesDetector
+    from sotto.detect.rules import RulesDetector
 
     rules = pf = pii_detector = None
     extra = []
@@ -87,8 +119,8 @@ def make_detector(spec: str):
         else:  # any L2 model: pf, pf-8bit, pf-nemotron, gliner2, gliner-nvidia
             pf = make_detector(p)
     flags = flags.split(":")
-    return Pipeline(rules, pf, pii="pii" in flags, refine="raw" not in flags, extra=extra,
-                    pii_detector=pii_detector, refine_pii="rawpii" not in flags)
+    return CandidatePipeline(rules, pf, extra=extra, pii_detector=pii_detector, pii="pii" in flags,
+                             refine="raw" not in flags, refine_pii="rawpii" not in flags)
 
 
 def _stats(det) -> dict:
@@ -360,7 +392,7 @@ def run(detectors: list[str], data: Path, out: Path, repeat: int = 3, limit: int
         raw = out / f".worker-{stamp}-{spec.replace('+', '_').replace(':', '_')}.json"
         print(f"[bench] {spec} (repeat={reps})", file=sys.stderr, flush=True)
         spawn = time.time()
-        cmd = [sys.executable, "-m", "sotto.bench", spec, str(data), str(raw), str(reps), str(limit or 0)]
+        cmd = [sys.executable, str(Path(__file__).resolve()), "--worker", spec, str(data), str(raw), str(reps), str(limit or 0)]
         proc = subprocess.run(cmd, env=env)
         if proc.returncode != 0 or not raw.exists():
             print(f"[bench] {spec} failed (exit {proc.returncode}); skipping", file=sys.stderr)
@@ -489,6 +521,25 @@ def render_markdown(s: dict) -> str:
     return "\n".join(L) + "\n"
 
 
+def main() -> None:
+    import argparse
+
+    if sys.argv[1:2] == ["--worker"]:
+        spec, data, out, reps, limit = sys.argv[2:7]
+        worker(spec, Path(data), Path(out), int(reps), int(limit) or None)
+        return
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--detectors", default=DEFAULT_DETECTORS, help="comma-separated detectors")
+    ap.add_argument("--data", type=Path, default=Path(__file__).parent / "data", help="directory of labeled *.jsonl files, or one file")
+    ap.add_argument("--out", type=Path, default=Path(__file__).parent / "results", help="where to write the JSON and Markdown results")
+    ap.add_argument("--repeat", type=int, default=3, help="timed runs per record for local detectors (AFM runs once)")
+    ap.add_argument("--limit", type=int, default=0, help="use only the first N records of each file (0 = all)")
+    args = ap.parse_args()
+    names = [d.strip() for d in args.detectors.split(",") if d.strip()]
+    json_path, md_path = run(names, args.data, args.out, repeat=args.repeat, limit=args.limit or None)
+    print(md_path.read_text())
+    print(f"Wrote {json_path} and {md_path}")
+
+
 if __name__ == "__main__":
-    spec, data, out, reps, limit = sys.argv[1:6]
-    worker(spec, Path(data), Path(out), int(reps), int(limit) or None)
+    main()

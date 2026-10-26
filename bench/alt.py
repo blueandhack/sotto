@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-from . import Span
+from sotto.detect import Span
 
 # Label sets passed to the zero-shot GLiNER models, mapped to sotto types.
 GLINER2_LABELS = {

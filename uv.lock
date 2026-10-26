@@ -1966,9 +1966,13 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 afm = [
     { name = "apple-fm-sdk" },
+]
+dev = [
+    { name = "faker" },
+    { name = "pytest" },
 ]
 mlx = [
     { name = "huggingface-hub" },
@@ -1978,42 +1982,39 @@ mlx = [
     { name = "numpy" },
     { name = "tokenizers" },
 ]
-pf-torch = [
+torch = [
     { name = "numpy" },
     { name = "torch" },
     { name = "transformers" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "faker" },
-    { name = "pytest" },
-]
-
 [package.metadata]
 requires-dist = [
-    { name = "apple-fm-sdk", marker = "extra == 'afm'", specifier = ">=0.2.1" },
     { name = "httpx", specifier = ">=0.28" },
-    { name = "huggingface-hub", marker = "extra == 'mlx'", specifier = ">=0.25" },
     { name = "keyring", specifier = ">=25" },
-    { name = "mlx", marker = "extra == 'mlx'", specifier = ">=0.31" },
-    { name = "mlx-embeddings", marker = "extra == 'mlx'", git = "https://github.com/Blaizzy/mlx-embeddings?rev=9b28270be81211f2b8daed0041aec65ea5dc4b28" },
-    { name = "mlx-lm", marker = "extra == 'mlx'", specifier = ">=0.28" },
-    { name = "numpy", marker = "extra == 'mlx'", specifier = ">=2.0" },
-    { name = "numpy", marker = "extra == 'pf-torch'", specifier = ">=2.0" },
     { name = "starlette", specifier = ">=0.45" },
-    { name = "tokenizers", marker = "extra == 'mlx'", specifier = ">=0.21" },
-    { name = "torch", marker = "extra == 'pf-torch'", specifier = ">=2.9" },
-    { name = "transformers", marker = "extra == 'pf-torch'", specifier = ">=5.6" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
-provides-extras = ["mlx", "pf-torch", "afm"]
 
 [package.metadata.requires-dev]
+afm = [{ name = "apple-fm-sdk", specifier = ">=0.2.1" }]
 dev = [
     { name = "faker", specifier = ">=30" },
     { name = "pytest", specifier = ">=8" },
+]
+mlx = [
+    { name = "huggingface-hub", specifier = ">=0.25" },
+    { name = "mlx", specifier = ">=0.31" },
+    { name = "mlx-embeddings", git = "https://github.com/Blaizzy/mlx-embeddings?rev=9b28270be81211f2b8daed0041aec65ea5dc4b28" },
+    { name = "mlx-lm", specifier = ">=0.28" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "tokenizers", specifier = ">=0.21" },
+]
+torch = [
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "torch", specifier = ">=2.9" },
+    { name = "transformers", specifier = ">=5.6" },
 ]
 
 [[package]]

@@ -1,12 +1,16 @@
-"""The MLX backend's BIOES decoder, kept for benchmark comparisons (`sotto[mlx]`)."""
+"""The MLX backend's BIOES decoder, kept for benchmark comparisons (`uv sync --group mlx`)."""
 
 import itertools
+import sys
+from pathlib import Path
 
 import pytest
 
 np = pytest.importorskip("numpy")
 
-from sotto.detect.pf import BIOESDecoder  # noqa: E402
+sys.path.insert(0, str(Path(__file__).parent.parent / "bench"))
+
+from pf_mlx import BIOESDecoder  # noqa: E402
 
 
 def _brute_force(decoder, logp):

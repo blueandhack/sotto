@@ -13,26 +13,6 @@ dependencies = [
     "httpx>=0.28",
 ]
 
-[project.optional-dependencies]
-# Benchmark only: OpenAI Privacy Filter on MLX or PyTorch/MPS, compared with pf-serve (the runtime).
-mlx = [
-    "mlx>=0.31",
-    "mlx-lm>=0.28",  # imported by mlx-embeddings' privacy-filter model; runs the Qwen judge experiment
-    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings@9b28270be81211f2b8daed0041aec65ea5dc4b28",  # privacy-filter support is unreleased (PyPI 0.1.0 lacks it)
-    "numpy>=2.0",
-    "tokenizers>=0.21",
-    "huggingface-hub>=0.25",
-]
-pf-torch = [
-    "torch>=2.9",
-    "transformers>=5.6",
-    "numpy>=2.0",
-]
-# Benchmark only: the Apple on-device model through its Python SDK (dropped from v1).
-afm = [
-    "apple-fm-sdk>=0.2.1",
-]
-
 [project.scripts]
 sotto = "sotto.cli:app"
 # For editors that launch Claude Code through a wrapper (VS Code: claudeCode.claudeProcessWrapper).
@@ -42,6 +22,25 @@ sotto-claude-wrapper = "sotto.launch:wrap_main"
 dev = [
     "pytest>=8",
     "faker>=30",
+]
+# Benchmark comparisons only (bench/): `uv sync --group mlx`, `--group torch`, `--group afm`.
+# OpenAI Privacy Filter on MLX or PyTorch/MPS, compared with pf-serve (the runtime).
+mlx = [
+    "mlx>=0.31",
+    "mlx-lm>=0.28",  # imported by mlx-embeddings' privacy-filter model; runs the Qwen judge experiment
+    "mlx-embeddings @ git+https://github.com/Blaizzy/mlx-embeddings@9b28270be81211f2b8daed0041aec65ea5dc4b28",  # privacy-filter support is unreleased (PyPI 0.1.0 lacks it)
+    "numpy>=2.0",
+    "tokenizers>=0.21",
+    "huggingface-hub>=0.25",
+]
+torch = [
+    "torch>=2.9",
+    "transformers>=5.6",
+    "numpy>=2.0",
+]
+# The Apple on-device model through its Python SDK (dropped from v1).
+afm = [
+    "apple-fm-sdk>=0.2.1",
 ]
 
 [build-system]

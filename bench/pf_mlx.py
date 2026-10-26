@@ -1,6 +1,6 @@
-"""L2: OpenAI Privacy Filter, a token classifier over 8 privacy labels with BIOES tags.
+"""OpenAI Privacy Filter on MLX or PyTorch: the runtime before pf-serve, kept for benchmark comparisons.
 
-Backends: MLX (mlx-community ports, via mlx-embeddings) or PyTorch on MPS (transformers).
+A token classifier over 8 privacy labels with BIOES tags. Backends: MLX (mlx-community ports, via mlx-embeddings) or PyTorch on MPS (transformers).
 Both produce per-token logits; span decoding is shared and runs in numpy.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import Span
+from sotto.detect import Span
 
 SOURCE = "pf"
 

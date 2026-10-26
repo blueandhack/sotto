@@ -21,11 +21,12 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from sotto.bench import _covered, load_records, percentile
 from sotto.detect import Span
-from sotto.detect.pf import PrivacyFilter
 from sotto.detect.pipeline import Pipeline
 from sotto.detect.rules import RulesDetector
+
+from pf_mlx import PrivacyFilter  # noqa: E402  (bench/, the script's own directory)
+from run import _covered, load_records, percentile  # noqa: E402
 
 # The Qwen judge was briefly sotto's opt-in L3. It was removed once the personal-data
 # refinement made it redundant (it cleared 0 of 347 spans); it lives here for the record.

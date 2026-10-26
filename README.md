@@ -145,7 +145,7 @@ No language model judges spans at request time. The Apple on-device model and Qw
 uv sync
 uv run pytest                                # unit, property, proxy, streaming and launcher tests
 uv run python bench/gen.py                   # generate the benchmark datasets
-uv run sotto bench --detectors rules,rules+pf-serve --data bench/data   # see bench/README.md
+uv run python bench/run.py                   # accuracy and speed; see bench/README.md
 ```
 
 The design and milestones are in [SPEC.md](docs/SPEC.md).

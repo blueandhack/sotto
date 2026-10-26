@@ -39,48 +39,29 @@ _PII_EDGE = "/\\:;,.'\"`()[]{}<>|="
 
 
 class Pipeline:
-    def __init__(self, rules: RulesDetector | None, pf=None, pii: bool = False, refine: bool = True, extra=(),
-                 pii_detector=None, refine_pii: bool = True):
+    def __init__(self, rules: RulesDetector | None, pf=None, pii: bool = False, refine: bool = True,
+                 refine_pii: bool = True):
         self.rules = rules
         self.pf = pf
-        # A separate personal-data model (benchmark candidate); pf then reports secrets only.
-        self.pii_detector = pii_detector
-        self.refine_pii_spans = refine_pii
-        self.extra = list(extra)  # more secret detectors, unioned as they are (benchmark candidates)
         self.pii = pii
+        # Turned off only to measure what refinement does (benchmark flags :raw and :rawpii).
         self.refine = refine
+        self.refine_pii_spans = refine_pii
         self.allowlist = rules.allowlist if rules else None
         # Detection funnel for the stats feed: counts only, for newly scanned text.
         self.funnel: Counter[str] = Counter()
         parts = [p for p, on in (("rules", rules), (getattr(pf, "name", "pf"), pf)) if on]
-        parts[1:1] = [d.name for d in self.extra]
-        if pii_detector:
-            parts.append(pii_detector.name)
         flags = [f for f, on in (("pii", pii), ("raw", not refine), ("rawpii", not refine_pii)) if on]
         self.name = "+".join(parts) + "".join(f":{f}" for f in flags)
 
     def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
-        candidates = 0
         if self.rules:
             found = self.rules.detect(text)
             self.funnel["candidates_rules"] += len(found)
             spans += found
-        for d in self.extra:
-            spans += d.detect(text)
-        if self.pf:
-            for s in self.pf.detect(text):
-                if s.type == "ACCOUNT" and self.refine and self.credential_not_account(text, s):
-                    s = Span(s.start, s.end, "SECRET", s.confidence, s.source)
-                if s.type != "SECRET" and not (self.pii and not self.pii_detector):
-                    continue  # personal data only when enabled
-                candidates += 1
-                spans += self.refine_secret(text, s) if self.refine and s.type == "SECRET" else [s]
-        if self.pii and self.pii_detector:
-            found = [s for s in self.pii_detector.detect(text) if s.type != "SECRET"]
-            candidates += len(found)
-            spans += found
-        self.funnel["candidates_model"] += candidates
+        self.funnel["candidates_model"] += 0
+        spans += self.model_spans(text)
         if self.pii and self.refine_pii_spans:
             spans = [t for s in spans if (t := self.trim_pii(text, s)) is not None
                      and (t.type == "SECRET" or t.source.startswith("rules") or self.keep_pii(text, t))]
@@ -95,6 +76,20 @@ class Pipeline:
         self.funnel["after_allowlist"] += len(spans)
         self.funnel["masked"] += len(merged)
         return merged
+
+    def model_spans(self, text: str) -> list[Span]:
+        """The model's spans: secrets refined, personal data only when enabled."""
+        out: list[Span] = []
+        if not self.pf:
+            return out
+        for s in self.pf.detect(text):
+            if s.type == "ACCOUNT" and self.refine and self.credential_not_account(text, s):
+                s = Span(s.start, s.end, "SECRET", s.confidence, s.source)
+            if s.type != "SECRET" and not self.pii:
+                continue
+            self.funnel["candidates_model"] += 1
+            out += self.refine_secret(text, s) if self.refine and s.type == "SECRET" else [s]
+        return out
 
     @staticmethod
     def credential_not_account(text: str, span: Span) -> bool:

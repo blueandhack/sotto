@@ -17,7 +17,7 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass
 
-from . import TYPES, Span
+from sotto.detect import TYPES, Span
 
 EXTRACT_INSTRUCTIONS = (
     "You are a data-loss-prevention scanner. List every secret and every piece of personal data "
