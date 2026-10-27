@@ -35,6 +35,9 @@ struct Snapshot: Decodable, Sendable {
         /// Values masked in text this request brought; the rest came from earlier turns.
         var new: Int?
         var unresolved: Int?
+        /// Which coding agent sent it, and which provider it went to (absent in old history).
+        var client: String? = nil
+        var provider: String? = nil
         var id: Double { ts }
 
         enum Kind: String, CaseIterable { case masked, clean, blocked, observed }
@@ -91,11 +94,29 @@ enum Connection: Equatable {
 }
 
 /// A short-lived visual event for the flow diagram.
+/// One request on the flow diagram: out from its client to its result (clean, masked,
+/// observed, blocked, failed) and provider, or a reply back, with or without restored values.
 struct Pulse: Identifiable, Sendable {
-    enum Kind: Sendable { case clean, masked(String), restored(String), blocked }
+    enum Kind: Sendable { case out(String), back(restored: Bool) }
     let id = UUID()
     let kind: Kind
+    let client: String
+    let provider: String
     let born: Date
+}
+
+/// `GET /_sotto/flows`: totals over a time window for the two flow diagrams. Counts only.
+struct Flows: Decodable, Sendable {
+    struct Client: Decodable, Sendable { var id: String; var name: String; var sent: Int }
+    struct Provider: Decodable, Sendable { var id: String; var name: String; var replies: Int }
+    struct Out: Decodable, Sendable { var client: String; var provider: String?; var kind: String; var n: Int }
+    struct Back: Decodable, Sendable { var provider: String; var client: String; var restored: Bool; var n: Int; var values: Int }
+    var window: Double = 3600
+    var clients: [Client] = []
+    var providers: [Provider] = []
+    var out: [Out] = []
+    var back: [Back] = []
+    var unresolved: Int = 0
 }
 
 @MainActor
@@ -105,7 +126,10 @@ final class StatsStore {
     var connection: Connection = .connecting
     var pulses: [Pulse] = []
     var sampleMode = false {
-        didSet { if sampleMode { sample = SampleFeed() } }
+        didSet {
+            if sampleMode { sample = SampleFeed() }
+            Task { await refreshFlows() }
+        }
     }
 
     private var sample = SampleFeed()
@@ -117,11 +141,39 @@ final class StatsStore {
     func start() {
         guard task == nil else { return }
         task = Task { [weak self] in
+            var tick = 0
             while !Task.isCancelled {
                 await self?.refresh()
+                if tick % 3 == 0 { await self?.refreshFlows() }
+                tick += 1
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    // MARK: Flows (the live flow diagrams): totals over a window, from sotto's history.
+
+    private(set) var flows = Flows()
+    var flowWindow: Double = 3600 {
+        didSet { Task { await refreshFlows() } }
+    }
+
+    /// For the snapshot renderer, which draws without waiting for a refresh.
+    func injectFlows(_ f: Flows) { flows = f }
+
+    func refreshFlows() async {
+        if sampleMode {
+            flows = SampleFeed.flows(window: flowWindow)
+            return
+        }
+        guard let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_sotto/flows?window=\(Int(flowWindow))")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 4
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+        if let f = try? JSONDecoder().decode(Flows.self, from: data) { flows = f }
     }
 
     func refresh() async {
@@ -205,17 +257,18 @@ final class StatsStore {
     private func apply(_ new: Snapshot, connection: Connection) {
         let now = Date()
         for event in new.recent where event.ts > lastEventTs {
-            if event.outcome == "blocked" || event.outcome == "rejected" {
-                pulses.append(Pulse(kind: .blocked, born: now))
-            } else if event.kind == .clean || event.kind == .observed {
-                pulses.append(Pulse(kind: .clean, born: now))
-            } else {
-                for (type, n) in event.redacted { for _ in 0..<min(n, 3) { pulses.append(Pulse(kind: .masked(type), born: now)) } }
+            if event.scanMs == nil && (event.outcome == "forwarded" || event.outcome == "observed") { continue }  // bodyless check
+            let client = event.client ?? "claude-code", provider = event.provider ?? "anthropic"
+            let result = event.outcome == "upstream_error" ? "failed" : event.kind.rawValue
+            pulses.append(Pulse(kind: .out(result), client: client, provider: provider, born: now))
+            if result != "blocked" && result != "failed" {
+                pulses.append(Pulse(kind: .back(restored: event.restored.values.reduce(0, +) > 0), client: client,
+                                    provider: provider, born: now.addingTimeInterval(FlowGeometry.replyDelay)))
             }
-            for (type, n) in event.restored { for _ in 0..<min(n, 3) { pulses.append(Pulse(kind: .restored(type), born: now)) } }
         }
         lastEventTs = max(lastEventTs, new.recent.last?.ts ?? 0)
         pulses.removeAll { now.timeIntervalSince($0.born) > FlowGeometry.lifetime }
+        if pulses.count > 60 { pulses.removeFirst(pulses.count - 60) }
         snapshot = new
         self.connection = connection
     }
@@ -261,7 +314,34 @@ struct SampleFeed {
         for i in 0..<14 { snap.recent.append(event(at: now - Double(14 - i) * 7)) }
     }
 
+    /// The flows a preview shows: three clients, two providers, the numbers of the design mock.
+    static func flows(window: Double) -> Flows {
+        let k = window <= 3600 ? 1 : (window <= 86400 ? 9 : 52)
+        var f = Flows()
+        f.window = window
+        f.clients = [.init(id: "claude-code", name: "Claude Code", sent: 412 * k), .init(id: "codex", name: "Codex", sent: 96 * k),
+                     .init(id: "pi", name: "pi", sent: 31 * k)]
+        f.providers = [.init(id: "anthropic", name: "Anthropic", replies: 435 * k), .init(id: "openai", name: "OpenAI", replies: 94 * k)]
+        f.out = [.init(client: "claude-code", provider: "anthropic", kind: "clean", n: 258 * k),
+                 .init(client: "claude-code", provider: "anthropic", kind: "masked", n: 148 * k),
+                 .init(client: "claude-code", provider: nil, kind: "blocked", n: 6 * k),
+                 .init(client: "codex", provider: "openai", kind: "clean", n: 70 * k),
+                 .init(client: "codex", provider: "openai", kind: "masked", n: 24 * k),
+                 .init(client: "codex", provider: nil, kind: "blocked", n: 2 * k),
+                 .init(client: "pi", provider: "anthropic", kind: "clean", n: 19 * k),
+                 .init(client: "pi", provider: "anthropic", kind: "masked", n: 10 * k),
+                 .init(client: "pi", provider: nil, kind: "blocked", n: 2 * k)]
+        f.back = [.init(provider: "anthropic", client: "claude-code", restored: true, n: 101 * k, values: 130 * k),
+                  .init(provider: "anthropic", client: "claude-code", restored: false, n: 305 * k, values: 0),
+                  .init(provider: "openai", client: "codex", restored: true, n: 11 * k, values: 19 * k),
+                  .init(provider: "openai", client: "codex", restored: false, n: 83 * k, values: 0),
+                  .init(provider: "anthropic", client: "pi", restored: true, n: 9 * k, values: 7 * k),
+                  .init(provider: "anthropic", client: "pi", restored: false, n: 20 * k, values: 0)]
+        return f
+    }
+
     private func event(at ts: Double) -> Snapshot.Event {
+        let client = Int.random(in: 0..<10) < 7 ? "claude-code" : (Bool.random() ? "codex" : "pi")
         let types = ["SECRET", "SECRET", "EMAIL", "PERSON", "PHONE"]
         var redacted: [String: Int] = [:]
         if Int.random(in: 0..<10) < 4 { redacted[types.randomElement()!] = Int.random(in: 1...3) }
@@ -269,7 +349,8 @@ struct SampleFeed {
         return .init(ts: ts, path: "/v1/messages", outcome: blocked ? "blocked" : "forwarded", status: blocked ? 500 : 200,
                      scanMs: blocked ? nil : Double.random(in: 6...120), redacted: redacted,
                      restored: redacted.isEmpty || Bool.random() ? [:] : ["SECRET": 1],
-                     new: redacted.isEmpty || Int.random(in: 0..<3) == 0 ? 0 : redacted.values.reduce(0, +))
+                     new: redacted.isEmpty || Int.random(in: 0..<3) == 0 ? 0 : redacted.values.reduce(0, +),
+                     client: client, provider: client == "codex" ? "openai" : "anthropic")
     }
 
     mutating func next() -> Snapshot {

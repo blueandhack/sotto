@@ -146,9 +146,12 @@ enum Snapshotter {
         store.snapshot = feed.next()
         store.connection = .sample
         let now = Date()
-        store.pulses = (0..<12).map { k in
-            let kinds: [Pulse.Kind] = [.masked("SECRET"), .clean, .masked("EMAIL"), .restored("SECRET"), .clean, .blocked]
-            return Pulse(kind: kinds[k % kinds.count], born: now.addingTimeInterval(-Double(k) * 0.19))
+        store.injectFlows(SampleFeed.flows(window: 3600))
+        store.pulses = (0..<9).map { k in
+            let kinds: [Pulse.Kind] = [.out("masked"), .out("clean"), .back(restored: true), .out("blocked"), .back(restored: false)]
+            let client = ["claude-code", "codex", "pi"][k % 3]
+            return Pulse(kind: kinds[k % kinds.count], client: client, provider: client == "codex" ? "openai" : "anthropic",
+                         born: now.addingTimeInterval(-Double(k) * 0.23))
         }
         for page in Page.allCases {
             for dark in [false, true] {

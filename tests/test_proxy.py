@@ -221,3 +221,32 @@ def test_history_survives_and_pages(tmp_path):
     text = (tmp_path / "history.jsonl").read_text()
     assert canary not in text and "SOTTO_" not in text  # counts only
     assert (tmp_path / "history.jsonl").stat().st_mode & 0o777 == 0o600
+
+
+
+def test_flows_follow_each_client_out_and_back():
+    from sotto.stats import client_of, flows, provider_of
+
+    assert client_of("claude-cli/2.1.310 (external, cli)") == "claude-code"
+    assert client_of("codex_cli_rs/0.50.0") == "codex" and client_of("") == "unknown"
+    assert provider_of("https://api.anthropic.com") == "anthropic" and provider_of("https://chatgpt.com/backend-api") == "openai"
+    canary = selftest.make_canary()
+
+    async def go():
+        _, client = make()
+        cc = {"user-agent": "claude-cli/2.1.310 (external, cli)"}
+        await client.post("/v1/messages", json=body_with(canary), headers=cc)  # masked; the mock echoes a placeholder back
+        await client.post("/v1/messages", json={"model": "m", "max_tokens": 8, "messages": [{"role": "user", "content": "hi"}]},
+                          headers={"user-agent": "pi-coding-agent/1.0"})  # clean
+        await client.post("/v1/files", content=b"x", headers=cc)  # blocked
+        await client.get("/api/hello", headers=cc)  # bodyless: not part of the flow
+        r = await client.get("/_sotto/flows?window=600", headers={"authorization": "Bearer t"})
+        return r.json()
+
+    f = anyio.run(go)
+    assert {c["id"]: c["sent"] for c in f["clients"]} == {"claude-code": 2, "pi": 1}
+    out = {(o["client"], o["provider"], o["kind"]): o["n"] for o in f["out"]}
+    assert out == {("claude-code", "up", "masked"): 1, ("pi", "up", "clean"): 1, ("claude-code", None, "blocked"): 1}  # the mock upstream
+    back = {(b["client"], b["restored"]): (b["n"], b["values"]) for b in f["back"]}
+    assert back[("claude-code", True)][0] == 1 and back[("claude-code", True)][1] >= 1 and back[("pi", False)] == (1, 0)
+    assert f["providers"] == [{"id": "up", "name": "up", "replies": 2}]

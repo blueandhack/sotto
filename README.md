@@ -145,7 +145,7 @@ sotto makes no network calls except the request it forwards, and `sotto setup`'s
 
 ## Mac app
 
-A menu-bar app that sets sotto up and runs it in the background, with a dashboard: a live flow map of where each request goes, request and detection funnels, masked values by type, scan latency, and recent activity, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
+A menu-bar app that sets sotto up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per client, request and detection funnels, masked values by type, scan latency, and recent activity, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
 
 ## Accuracy and speed
 

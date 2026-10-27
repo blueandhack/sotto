@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import threading
 import time
 from collections import Counter, deque
 from pathlib import Path
+from urllib.parse import urlsplit
 
 TOKEN_FILE = Path.home() / ".config" / "sotto" / "stats-token"
 # Every request's event (counts only), kept across restarts for the app's Activity page.
@@ -60,6 +62,19 @@ class History:
                 f.write("\n".join(lines[-self.keep:]) + "\n")
             tmp.replace(self.path)
 
+    def events(self) -> list[dict]:
+        try:
+            lines = self.path.read_text().splitlines()
+        except OSError:
+            return []
+        out = []
+        for line in lines:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        return out
+
     def page(self, before: float | None = None, limit: int = 100, outcome: str | None = None) -> list[dict]:
         """Events older than `before`, newest first. `outcome`: masked, clean, blocked or observed."""
         try:
@@ -80,6 +95,82 @@ class History:
             if len(out) >= limit:
                 break
         return out
+
+
+# Coding agents sotto can tell apart by their User-Agent: (prefix, id, name).
+CLIENTS = (
+    ("claude-cli", "claude-code", "Claude Code"),
+    ("claude-code", "claude-code", "Claude Code"),
+    ("codex", "codex", "Codex"),
+    ("pi-coding-agent", "pi", "pi"),
+    ("pi/", "pi", "pi"),
+)
+PROVIDERS = {"anthropic": "Anthropic", "openai": "OpenAI"}
+# Events from before sotto recorded clients came from Claude Code, the only client it served.
+DEFAULT_CLIENT = "claude-code"
+
+
+def client_of(user_agent: str) -> str:
+    ua = user_agent.strip().lower()
+    for prefix, cid, _ in CLIENTS:
+        if ua.startswith(prefix):
+            return cid
+    first = re.split(r"[/\s(]", ua, maxsplit=1)[0]
+    return re.sub(r"[^a-z0-9._-]", "", first)[:32] or "unknown"
+
+
+def client_name(cid: str) -> str:
+    return next((name for _, i, name in CLIENTS if i == cid), "Other" if cid == "unknown" else cid)
+
+
+def provider_of(upstream: str) -> str:
+    host = (urlsplit(upstream).hostname or "").lower()
+    if host.endswith("anthropic.com"):
+        return "anthropic"
+    if host.endswith("openai.com") or host.endswith("chatgpt.com"):
+        return "openai"
+    return host or "unknown"
+
+
+def flows(events, since: float) -> dict:
+    """Totals for the app's flow diagram over events newer than `since`: requests from each
+    client through sotto's result to each provider, and replies back through restore."""
+    out, back = Counter(), Counter()
+    values, unresolved = Counter(), 0
+    for e in events:
+        if e.get("ts", 0) < since:
+            continue
+        outcome = e.get("outcome")
+        if outcome in ("forwarded", "observed") and e.get("scan_ms") is None:
+            continue  # bodyless checks such as /api/hello: no content went anywhere
+        client = e.get("client") or DEFAULT_CLIENT
+        provider = e.get("provider") or "anthropic"
+        if outcome == "upstream_error":
+            out[(client, None, "failed")] += 1
+            continue
+        kind = event_kind(e)
+        if kind == "blocked":
+            out[(client, None, "blocked")] += 1
+            continue
+        out[(client, provider, kind)] += 1
+        n = sum((e.get("restored") or {}).values())
+        back[(provider, client, n > 0)] += 1
+        values[(provider, client)] += n
+        unresolved += e.get("unresolved") or 0
+    clients = Counter()
+    for (c, _, _), n in out.items():
+        clients[c] += n
+    providers = Counter()
+    for (p, _, _), n in back.items():
+        providers[p] += n
+    return {
+        "clients": [{"id": c, "name": client_name(c), "sent": n} for c, n in clients.most_common()],
+        "providers": [{"id": p, "name": PROVIDERS.get(p, p), "replies": n} for p, n in providers.most_common()],
+        "out": [{"client": c, "provider": p, "kind": k, "n": n} for (c, p, k), n in sorted(out.items(), key=str)],
+        "back": [{"provider": p, "client": c, "restored": r, "n": n, "values": values[(p, c)] if r else 0}
+                 for (p, c, r), n in sorted(back.items(), key=str)],
+        "unresolved": unresolved,
+    }
 
 
 def event_kind(e: dict) -> str:
@@ -108,7 +199,8 @@ class Stats:
         self.minutes: deque[dict] = deque(maxlen=180)  # per-minute buckets for the timeline
 
     def record(self, path: str, outcome: str, status: int, scan_ms: float | None = None,
-               redacted: Counter | None = None, restored: Counter | None = None, new: int = 0) -> None:
+               redacted: Counter | None = None, restored: Counter | None = None, new: int = 0,
+               origin: tuple[str, str] | None = None) -> None:
         from .restore import UNRESOLVED
 
         restored = Counter(restored or {})
@@ -137,6 +229,8 @@ class Stats:
                 "redacted": dict(redacted or {}), "restored": dict(restored), "new": new,
                 "unresolved": unresolved,
             }
+            if origin:
+                event["client"], event["provider"] = origin
             self.events.append(event)
         if self.history:
             self.history.append(event)

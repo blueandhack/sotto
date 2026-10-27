@@ -207,20 +207,13 @@ struct OverviewPage: View {
                     footnote: "budget 150 ms",
                     tint: (s.scanMs.p95 ?? 0) > LatencyChart.budget ? Theme.danger : Theme.accent)
             }
-            Card(title: "Live flow", subtitle: "Where each request goes. Only what reaches the Anthropic side leaves this Mac.") {
-                PipelineView(snapshot: s, pulses: store.pulses, live: store.connection == .live || store.connection == .sample)
+            Card(title: "Live flow", subtitle: "Requests out on top, replies back below. Band width is the number of requests.") {
+                Segmented(options: [(3600.0, "Last hour"), (86400.0, "24 hours"), (604800.0, "7 days")],
+                          selection: Binding(get: { store.flowWindow }, set: { store.flowWindow = $0 }))
+            } content: {
+                FlowBandsView(flows: store.flows, pulses: store.pulses, live: store.connection == .live || store.connection == .sample)
+                    .frame(minHeight: 360, maxHeight: .infinity)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 12) {
-                Card(title: "Recent requests", subtitle: "Counts only") {
-                    ActivityTable(events: s.recent, rows: 5, compact: true)
-                }
-                Card(title: "Last hour", subtitle: "Masked values per minute") {
-                    MaskedTimeline(minutes: s.timeline)
-                }
-                .frame(maxWidth: 420)
-            }
-            .frame(minHeight: 200, maxHeight: .infinity)
         }
     }
 }
