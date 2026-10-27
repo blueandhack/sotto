@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections import Counter, OrderedDict
 
 from .detect import Span
@@ -25,6 +26,11 @@ PLACEHOLDER_HINT = (
     "needed, and do not call it fake, masked or a placeholder. Real values are restored locally "
     "in your replies and tool calls."
 )
+
+
+# Responses API items that are encrypted or signed, or carry no user content.
+RESPONSES_PASS_THROUGH = frozenset({"reasoning", "compaction", "item_reference", "web_search_call", "image_generation_call"})
+RESPONSES_HINT = {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": PLACEHOLDER_HINT}]}
 
 
 class Redactor:
@@ -98,6 +104,56 @@ class Redactor:
                 for m in out["messages"]
             ]
         return out
+
+    # --- Responses API payloads (OpenAI: Codex, pi) ------------------------------------
+
+    def redact_responses_request(self, body: dict) -> dict:
+        """A copy of a /responses body with `instructions` and every `input` item masked.
+
+        Reasoning items are encrypted and signed: they pass through, like thinking blocks. The
+        placeholder hint goes first in `input` as a developer message, stable across turns.
+        """
+        out = dict(body)
+        if isinstance(out.get("instructions"), str):
+            out["instructions"] = self.redact_text(out["instructions"])
+        items = out.get("input")
+        if isinstance(items, str):
+            items = [{"type": "message", "role": "user", "content": items}]
+        if isinstance(items, list):
+            out["input"] = [RESPONSES_HINT, *(self._responses_item(i) for i in items)]
+        return out
+
+    def _responses_item(self, item):
+        if not isinstance(item, dict):
+            return item
+        kind = item.get("type", "message")
+        if kind in RESPONSES_PASS_THROUGH:
+            return item
+        if kind == "message":
+            content = item.get("content")
+            if isinstance(content, str):
+                return {**item, "content": self.redact_text(content)}
+            if isinstance(content, list):
+                return {**item, "content": [{**c, "text": self.redact_text(c["text"])}
+                                            if isinstance(c, dict) and isinstance(c.get("text"), str) else c
+                                            for c in content]}
+            return item
+        if kind == "function_call" and isinstance(item.get("arguments"), str):
+            return {**item, "arguments": self._json_string(item["arguments"])}
+        out = dict(item)
+        for key in ("output", "input", "content", "text", "action"):
+            if key in out:
+                out[key] = self._values(out[key])
+        return out
+
+    def _json_string(self, raw: str) -> str:
+        """Tool-call arguments are a JSON document in a string: mask its values, keep its keys."""
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return self.redact_text(raw)
+        masked = self._values(parsed)
+        return raw if masked == parsed else json.dumps(masked, ensure_ascii=False)
 
     @staticmethod
     def _with_hint(system):

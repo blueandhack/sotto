@@ -85,11 +85,9 @@ def _proxy_or_exit(pii, rules_only, upstream, who):  # who: "serve" or "claude",
 def claude(ctx: typer.Context) -> None:
     """Start Claude Code with every request scanned. Arguments go to `claude` unchanged."""
     import os
-
     import shutil
 
     from .launch import PROTECTED_BUT_DOWN, _run_child, bypass_risks, log_to_file, protected, run_claude, shared_serve_port
-
     from .protect import is_excluded
 
     cfg = _config()
@@ -121,6 +119,34 @@ def claude(ctx: typer.Context) -> None:
     except (FileNotFoundError, RuntimeError) as e:
         typer.echo(f"sotto claude: {e}", err=True)
         raise typer.Exit(2)
+    raise typer.Exit(code)
+
+
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def codex(ctx: typer.Context) -> None:
+    """Start Codex with every request scanned. Arguments go to `codex` unchanged."""
+    import os
+    import shutil
+
+    from .clients import codex_args
+    from .launch import BackgroundServer, _run_child, log_to_file, shared_serve_port
+
+    binary = shutil.which("codex")
+    if binary is None:
+        typer.echo("sotto codex: `codex` is not on PATH", err=True)
+        raise typer.Exit(2)
+    cfg = _config()
+    port = shared_serve_port(cfg, need="responses")
+    if port is not None:
+        raise typer.Exit(_run_child([binary, *codex_args(port), *ctx.args], dict(os.environ)))
+    cfg, proxy = _proxy_or_exit(None, False, None, "codex")
+    log_to_file(cfg.log_level)
+    server = BackgroundServer(proxy)
+    server.start()
+    try:
+        code = _run_child([binary, *codex_args(server.port), *ctx.args], dict(os.environ))
+    finally:
+        server.stop()
     raise typer.Exit(code)
 
 
@@ -200,30 +226,39 @@ def setup() -> None:
 @app.command()
 def protect(
     action: str = typer.Argument("status", help="on, off, or status"),
+    client: list[str] = typer.Option(None, "--client", help="claude, codex or pi (default: every one installed)."),
     as_json: bool = typer.Option(False, "--json", help="Print status as JSON."),
 ) -> None:
-    """Send every Claude Code session through `sotto serve` (on), stop (off), or show which."""
+    """Send every Claude Code, Codex and pi session through `sotto serve` (on), stop (off), or show which."""
     import json
 
-    from .protect import ProtectError, disable, enable, status
+    from .clients import CLIENTS, protect_clients
 
     cfg = _config()
-    try:
-        st = {"on": enable, "off": disable, "status": status}[action](cfg.port)
-    except KeyError:
-        typer.echo("sotto protect: use on, off or status", err=True)
+    if action not in ("on", "off", "status") or any(c not in CLIENTS for c in client or []):
+        typer.echo("sotto protect: use on, off or status, and --client claude|codex|pi", err=True)
         raise typer.Exit(2)
-    except ProtectError as e:
-        typer.echo(f"sotto protect: {e}", err=True)
-        raise typer.Exit(1)
+    result = protect_clients(action, cfg.port, client or None)
     if as_json:
-        typer.echo(json.dumps(st.as_dict()))
-    elif st.on:
-        typer.echo(f"on: {st.path} sends Claude Code to http://127.0.0.1:{cfg.port}"
-                   + ("" if action == "status" else "; sessions already running switch over now"), err=True)
-    else:
-        typer.echo(f"off: {st.path} does not route Claude Code through sotto"
-                   + ("; sessions already running keep using sotto until restarted" if action == "off" else ""), err=True)
+        typer.echo(json.dumps(result))
+        return
+    names = {"claude": "Claude Code", "codex": "Codex", "pi": "pi"}
+    for name, st in result.items():
+        if not st.get("installed"):
+            line = "not installed"
+        elif st.get("error"):
+            line = f"error: {st['error']}"
+        elif st.get("on"):
+            line = "on: goes through sotto" + (f" ({', '.join(st['providers'])})" if st.get("providers") else "")
+        else:
+            line = "off" + (f": already uses {st['other']}, left alone" if st.get("other") else "")
+        typer.echo(f"{names[name]:12} {line}", err=True)
+    if action == "on":
+        typer.echo("Claude Code sessions switch now; Codex and pi pick it up when they next start.", err=True)
+    elif action == "off":
+        typer.echo("Sessions already running keep using sotto until they restart.", err=True)
+    if any(st.get("error") for st in result.values()):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -299,14 +334,17 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
     from .protect import status as protect_status
 
     cfg = _config()
+    from .clients import protect_clients
+
     try:
         prot = protect_status(cfg.port).as_dict()
     except ProtectError as e:
         prot = {"error": str(e)}
+    clients = protect_clients("status", cfg.port)
     binary, model = find_binary(), find_model()
     out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
            "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None,
-           "observe": cfg.observe,
+           "observe": cfg.observe, "clients": clients,
            "excluded": excluded_projects()}
     typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 

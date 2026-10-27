@@ -2,9 +2,9 @@
 
 <h1 align="center">sotto</h1>
 
-<p align="center"><b>Keep secrets and personal data on your Mac while you use Claude Code.</b></p>
+<p align="center"><b>Keep secrets and personal data on your Mac while you use Claude Code, Codex or pi.</b></p>
 
-sotto is a local proxy that sits between Claude Code and the Anthropic API. Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When Claude answers, sotto puts the real values back, so Claude can still edit your `.env` file correctly, but Anthropic never sees what is in it.
+sotto is a local proxy that sits between your coding agent (Claude Code, Codex or pi) and its model provider (Anthropic or OpenAI). Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When Claude answers, sotto puts the real values back, so Claude can still edit your `.env` file correctly, but Anthropic never sees what is in it.
 
 Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned request to Anthropic. The name comes from *sotto voce*, "in a low voice".
 
@@ -58,7 +58,10 @@ sotto selftest                              # sends a canary secret through sott
 
 ```sh
 sotto claude          # starts Claude Code with every request scanned; arguments pass through to `claude`
+sotto codex           # the same for Codex (ChatGPT login or API key); arguments pass through to `codex`
 ```
+
+`sotto codex` adds `-c` overrides for that run only: a `sotto` model provider pointed at the proxy, with WebSockets off (sotto refuses them, since it cannot scan them) and your existing Codex login. Your Codex config file is not changed.
 
 ### In VS Code (Claude Code extension)
 
@@ -74,10 +77,20 @@ Each conversation then starts through sotto. If `sotto serve` is running, every 
 
 ```sh
 sotto serve           # http://127.0.0.1:7788
-sotto protect on      # Claude Code's user settings now send every session to it; `sotto protect off` undoes it
+sotto protect on      # Claude Code, Codex and pi now send every session to it; `sotto protect off` undoes it
 ```
 
-`sotto protect` changes one key, `env.ANTHROPIC_BASE_URL`, in `~/.claude/settings.json`, and keeps a backup next to it. Sessions already running switch over when it is turned on; turning it off reaches only sessions started afterwards. While it is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
+`sotto protect` changes, for each tool that is installed (`--client claude|codex|pi` picks one):
+
+| Tool | File | Change |
+| --- | --- | --- |
+| Claude Code | `~/.claude/settings.json` | `env.ANTHROPIC_BASE_URL` |
+| Codex | `~/.codex/config.toml` | `model_provider = "sotto"` and a marked `[model_providers.sotto]` block |
+| pi | `~/.pi/agent/models.json` | `baseUrl` for the `anthropic`, `openai` and `openai-codex` providers |
+
+Each file is backed up next to itself first, and `off` removes only what `on` added. A tool you have already pointed at another gateway is left alone and reported. Claude Code sessions switch at once; Codex and pi pick the change up when they next start.
+
+While protection is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
 ### Observe only
 
@@ -167,7 +180,8 @@ No language model judges spans at request time. The Apple on-device model and Qw
 - **Local transcripts keep real values.** Claude Code's history on your disk is restored, so it holds real values. sotto protects what leaves your Mac, not what is stored on it.
 - **Shell commands receive real values.** Claude can still run a command that sends a restored secret somewhere. Use it together with [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing), whose network allowlist stops that. sotto controls what Anthropic sees; the sandbox controls what commands can do.
 - **English-first.** The local model is strongest on English text.
-- **macOS on Apple silicon only.** Codex support is being explored.
+- **macOS on Apple silicon only.**
+- **Codex and pi: the Responses and Messages APIs only.** Codex's WebSocket transport is refused (it falls back to HTTPS), and pi providers other than Anthropic and OpenAI (Google, OpenRouter, local models) are not routed through sotto. Chat Completions requests are blocked, not sent unscanned.
 
 ## Development
 

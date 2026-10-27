@@ -41,7 +41,7 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
         upstream = None  # protection points Claude Code at sotto: never forward to ourselves
     pipeline = default_pipeline(pii=pii, rules_only=rules_only,
                                 allow_strings=cfg.allow_strings, allow_patterns=cfg.allow_patterns)
-    info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__}
+    info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__, "apis": ["messages", "responses"]}
     from .stats import History, Stats
 
     observe = ObserveFlag(cfg.path or CONFIG_FILE, cfg.observe)
@@ -187,7 +187,7 @@ def protected(cfg: Config) -> bool:
         return False
 
 
-def shared_serve_port(cfg: Config) -> int | None:
+def shared_serve_port(cfg: Config, need: str = "messages") -> int | None:
     """The port of a running `sotto serve`, if there is one. It must answer the stats endpoint
     with this user's private token and say it is in serve mode: something else listening on
     the port gets nothing."""
@@ -198,7 +198,9 @@ def shared_serve_port(cfg: Config) -> int | None:
     try:
         token = TOKEN_FILE.read_text().strip()
         r = httpx.get(f"http://127.0.0.1:{cfg.port}/_sotto/stats", headers={"authorization": f"Bearer {token}"}, timeout=1.5)
-        return cfg.port if r.status_code == 200 and r.json().get("mode") == "serve" else None
+        info = r.json() if r.status_code == 200 else {}
+        # A service started before Responses API support only scans the Messages API.
+        return cfg.port if info.get("mode") == "serve" and need in info.get("apis", ["messages"]) else None
     except (OSError, ValueError, httpx.HTTPError):
         return None
 

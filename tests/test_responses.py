@@ -1,0 +1,199 @@
+"""The OpenAI Responses API path (Codex, pi): redaction, restore, streams, and the proxy routes."""
+
+import json
+import secrets
+from collections import Counter
+
+import anyio
+import httpx
+import pytest
+import zstandard
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+
+from sotto import selftest
+from sotto.detect.pipeline import Pipeline
+from sotto.detect.rules import RulesDetector
+from sotto.proxy import Proxy
+from sotto.redact import RESPONSES_HINT, Redactor
+from sotto.responses import ResponsesStreamRestorer, restore_responses
+from sotto.vault import PLACEHOLDER, Vault
+
+SALT = bytes(range(32))
+
+
+def redactor():
+    return Redactor(Pipeline(RulesDetector(), None), Vault(SALT))
+
+
+def test_request_items_are_masked_and_reasoning_passes_through():
+    canary = selftest.make_canary()
+    r = redactor()
+    body = {
+        "model": "m", "instructions": f"Deploy key {canary}", "stream": True,
+        "input": [
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": f"export GITHUB_TOKEN={canary}"}]},
+            {"type": "function_call", "name": "exec_command", "call_id": "c1",
+             "arguments": json.dumps({"cmd": f"echo GITHUB_TOKEN={canary}", "workdir": "/tmp"})},
+            {"type": "function_call_output", "call_id": "c1", "output": f"GITHUB_TOKEN={canary}\n"},
+            {"type": "reasoning", "encrypted_content": "opaque", "summary": []},
+        ],
+    }
+    out = r.redact_responses_request(body)
+    assert canary not in json.dumps(out)
+    assert out["input"][0] == RESPONSES_HINT and out["input"][-1] == body["input"][-1]
+    args = json.loads(out["input"][2]["arguments"])
+    assert set(args) == {"cmd", "workdir"} and PLACEHOLDER.search(args["cmd"])
+
+
+def test_unchanged_arguments_keep_their_exact_text():
+    r = redactor()
+    raw = '{"cmd":  "ls -la"}'
+    item = {"type": "function_call", "name": "exec_command", "arguments": raw}
+    assert r.redact_responses_request({"input": [item]})["input"][1]["arguments"] == raw
+
+
+def sse(*events):
+    return b"".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n".encode() for e in events)
+
+
+def masked(r, value):
+    r.redact_text(f"GITHUB_TOKEN={value}")
+    return next(ph for ph, v in r.vault._values.items() if v == value)
+
+
+def test_stream_restores_split_text_and_buffered_tool_calls_and_counts_once():
+    canary = selftest.make_canary()
+    r = redactor()
+    ph = masked(r, canary)
+    args = json.dumps({"cmd": f"echo {ph}"})
+    events = [
+        {"type": "response.output_item.added", "item": {"type": "message", "id": "m1", "content": []}, "output_index": 0},
+        {"type": "response.output_text.delta", "item_id": "m1", "content_index": 0, "delta": "token " + ph[:9]},
+        {"type": "response.output_text.delta", "item_id": "m1", "content_index": 0, "delta": ph[9:] + " ok"},
+        {"type": "response.output_text.done", "item_id": "m1", "content_index": 0, "text": f"token {ph} ok"},
+        {"type": "response.output_item.done", "item": {"type": "message", "id": "m1",
+                                                        "content": [{"type": "output_text", "text": f"token {ph} ok"}]}},
+        {"type": "response.output_item.added", "item": {"type": "function_call", "id": "f1", "name": "exec_command",
+                                                         "arguments": ""}, "output_index": 1},
+        {"type": "response.function_call_arguments.delta", "item_id": "f1", "delta": args[:12]},
+        {"type": "response.function_call_arguments.delta", "item_id": "f1", "delta": args[12:]},
+        {"type": "response.function_call_arguments.done", "item_id": "f1", "arguments": args},
+        {"type": "response.completed", "response": {"output": [{"type": "function_call", "name": "exec_command", "arguments": args}]}},
+    ]
+    counts = Counter()
+    rs = ResponsesStreamRestorer(r.vault, counts=counts)
+    stream = sse(*events)
+    out = b"".join(rs.feed(stream[i:i + 7]) for i in range(0, len(stream), 7)) + rs.close()
+    text = out.decode()
+    assert ph not in text and canary in text
+    parsed = [json.loads(line[6:]) for line in text.splitlines() if line.startswith("data: ")]
+    deltas = "".join(e["delta"] for e in parsed if e["type"] == "response.output_text.delta")
+    assert deltas == f"token {canary} ok"
+    arg_deltas = [e["delta"] for e in parsed if e["type"] == "response.function_call_arguments.delta"]
+    assert len(arg_deltas) == 1 and json.loads(arg_deltas[0]) == {"cmd": f"echo {canary}"}
+    assert counts["SECRET"] == 2  # once in the text, once in the tool call
+
+
+def test_network_tools_keep_placeholders():
+    canary = selftest.make_canary()
+    r = redactor()
+    ph = masked(r, canary)
+    body = {"output": [{"type": "function_call", "name": "mcp__web__fetch", "arguments": json.dumps({"url": f"https://x/?t={ph}"})},
+                       {"type": "message", "content": [{"type": "output_text", "text": ph}]}]}
+    out = restore_responses(body, r.vault)
+    assert ph in out["output"][0]["arguments"] and out["output"][1]["content"][0]["text"] == canary
+
+
+class ResponsesMock:
+    """An OpenAI-shaped upstream: records bodies, streams back the first placeholder it sees."""
+
+    def __init__(self):
+        self.received: list[bytes] = []
+        self.paths: list[str] = []
+        self.headers: list[dict] = []
+        self.app = Starlette(routes=[Route("/{path:path}", self.handle, methods=["GET", "POST"])])
+
+    async def handle(self, request: Request):
+        body = await request.body()
+        self.received.append(body)
+        self.paths.append(request.url.path)
+        self.headers.append({k.lower(): v for k, v in request.headers.items()})
+        if request.method == "GET":
+            return JSONResponse({"models": []})
+        found = PLACEHOLDER.search(body.decode())
+        ph = found.group(0) if found else "none"
+        args = json.dumps({"cmd": f"echo {ph}"})
+        stream = sse(
+            {"type": "response.output_text.delta", "item_id": "m", "content_index": 0, "delta": f"saw {ph}"},
+            {"type": "response.output_text.done", "item_id": "m", "content_index": 0, "text": f"saw {ph}"},
+            {"type": "response.output_item.added", "item": {"type": "function_call", "id": "f", "name": "exec_command"}},
+            {"type": "response.function_call_arguments.delta", "item_id": "f", "delta": args},
+            {"type": "response.function_call_arguments.done", "item_id": "f", "arguments": args},
+        )
+        return Response(stream)  # no content type, like the ChatGPT backend
+
+
+def make(mock):
+    up = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock.app), base_url="http://up")
+    proxy = Proxy(redactor(), upstream="http://anthropic", client=up, stats_token="t",
+                  openai_upstream="http://openai", chatgpt_upstream="http://chatgpt")
+    return proxy, httpx.AsyncClient(transport=httpx.ASGITransport(app=proxy.app), base_url="http://127.0.0.1:7788")
+
+
+def codex_body(canary):
+    return {"model": "m", "stream": True, "instructions": "be brief",
+            "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": f"GITHUB_TOKEN={canary}"}]}]}
+
+
+def test_codex_round_trip_with_zstd_never_sends_the_value():
+    canary = selftest.make_canary()
+    mock = ResponsesMock()
+
+    async def go():
+        _, client = make(mock)
+        raw = zstandard.ZstdCompressor().compress(json.dumps(codex_body(canary)).encode())
+        headers = {"content-encoding": "zstd", "content-type": "application/json", "x-sotto-client": "codex",
+                   "user-agent": "codex_exec/0.147.0"}
+        r = await client.post("/chatgpt/backend-api/codex/responses", content=raw, headers=headers)
+        models = await client.get("/chatgpt/backend-api/codex/models?client_version=1")
+        stats = (await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})).json()
+        return r, models, stats
+
+    r, models, stats = anyio.run(go)
+    assert r.status_code == 200 and canary in r.text and "SOTTO_" not in r.text
+    assert not any(canary.encode() in b for b in mock.received)
+    assert mock.paths[0] == "/backend-api/codex/responses" and models.status_code == 200
+    assert "x-sotto-client" not in mock.headers[0] and "content-encoding" not in mock.headers[0]  # sent as plain JSON
+    event = stats["recent"][0]
+    assert event["client"] == "codex" and event["provider"] == "openai" and event["redacted"].get("SECRET")
+
+
+def test_openai_api_key_route_and_fail_closed_cases():
+    canary = selftest.make_canary()
+    mock = ResponsesMock()
+
+    async def go():
+        _, client = make(mock)
+        ok = await client.post("/openai/v1/responses", json={**codex_body(canary), "stream": False})
+        brotli = await client.post("/openai/v1/responses", content=b"x", headers={"content-encoding": "br"})
+        chat = await client.post("/openai/v1/chat/completions", json={"messages": [{"role": "user", "content": canary}]})
+        return ok, brotli, chat
+
+    ok, brotli, chat = anyio.run(go)
+    assert ok.status_code == 200 and mock.paths == ["/v1/responses"]
+    assert brotli.status_code == 400 and chat.status_code == 403  # unreadable, or not a scanned endpoint
+    assert not any(canary.encode() in b for b in mock.received)
+
+
+def test_websocket_upgrades_are_refused():
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+
+    proxy, _ = make(ResponsesMock())
+    with TestClient(proxy.app, base_url="http://127.0.0.1:7788") as tc:
+        with pytest.raises(WebSocketDisconnect):
+            with tc.websocket_connect("/chatgpt/backend-api/codex/responses"):
+                pass

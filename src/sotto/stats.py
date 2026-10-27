@@ -101,7 +101,7 @@ class History:
 CLIENTS = (
     ("claude-cli", "claude-code", "Claude Code"),
     ("claude-code", "claude-code", "Claude Code"),
-    ("codex", "codex", "Codex"),
+    ("codex", "codex", "Codex"),  # codex_exec/…, codex_cli_rs/…
     ("pi-coding-agent", "pi", "pi"),
     ("pi/", "pi", "pi"),
 )

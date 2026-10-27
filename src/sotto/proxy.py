@@ -1,22 +1,32 @@
-"""The local proxy: scan requests before they leave, restore responses before Claude Code sees them.
+"""The local proxy: scan requests before they leave, restore responses before the client sees them.
 
 Fail closed everywhere. A request is forwarded only after it was scanned; if scanning fails,
-the body is malformed, or the endpoint is one sotto does not scan, the request goes nowhere
-and Claude Code gets an API-style error. Logs carry paths, statuses and counts, never bodies,
-values or headers.
+the body is malformed or compressed in a way sotto cannot read, or the endpoint is one sotto
+does not scan, the request goes nowhere and the client gets an API-style error. WebSocket
+upgrades are refused (Codex then falls back to HTTPS). Logs carry paths, statuses and counts,
+never bodies, values or headers.
 
 Observe mode (`detect.observe`) is the exception, chosen by the user: every request is scanned
 and counted, then forwarded exactly as it came, unmasked, and nothing is blocked.
+
+One proxy serves every provider, chosen by path prefix:
+
+    /v1/messages...                      Anthropic Messages API (Claude Code, pi)
+    /openai/v1/responses...              OpenAI Responses API (Codex or pi with an API key)
+    /chatgpt/backend-api/codex/responses OpenAI through a ChatGPT login (Codex, pi)
 """
 
 from __future__ import annotations
 
+import gzip
 import hmac
 import json
 import logging
 import threading
 import time
+import zlib
 from collections import Counter
+from dataclasses import dataclass
 
 import anyio
 import httpx
@@ -26,17 +36,21 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from .redact import Redactor
+from .responses import ResponsesStreamRestorer, restore_responses
 from .restore import DEFAULT_POLICY, StreamRestorer, restore_response
 from .stats import Stats, client_of, flows, provider_of
 
 log = logging.getLogger("sotto")
 
 UPSTREAM = "https://api.anthropic.com"
-SCANNED = frozenset({"/v1/messages", "/v1/messages/count_tokens"})
+OPENAI_UPSTREAM = "https://api.openai.com"
+CHATGPT_UPSTREAM = "https://chatgpt.com"
+MESSAGES = frozenset({"/v1/messages", "/v1/messages/count_tokens"})
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
-# Not forwarded upstream; accept-encoding is replaced so responses arrive uncompressed.
+# Not forwarded upstream; accept-encoding is replaced so responses arrive uncompressed, and
+# x-sotto-client (set by `sotto protect` in client configs) is for sotto's stats only.
 HOP_HEADERS = frozenset({"host", "content-length", "connection", "keep-alive", "proxy-connection", "transfer-encoding",
-                         "te", "trailer", "upgrade", "accept-encoding"})
+                         "te", "trailer", "upgrade", "accept-encoding", "x-sotto-client"})
 RESPONSE_DROP = frozenset({"content-length", "content-encoding", "transfer-encoding", "connection", "keep-alive"})
 
 
@@ -52,12 +66,48 @@ def _host_is_local(request: Request) -> bool:
     return name in LOCAL_HOSTS
 
 
+def decode_body(raw: bytes, encoding: str) -> bytes:
+    """The request body uncompressed. Codex and pi send zstd. Anything unknown raises ValueError."""
+    encoding = encoding.strip().lower()
+    if encoding in ("", "identity"):
+        return raw
+    if encoding == "zstd":
+        import zstandard
+
+        return zstandard.ZstdDecompressor().decompressobj().decompress(raw)
+    if encoding in ("gzip", "x-gzip"):
+        return gzip.decompress(raw)
+    if encoding == "deflate":
+        return zlib.decompress(raw)
+    raise ValueError(f"unsupported content-encoding {encoding!r}")
+
+
+@dataclass(frozen=True)
+class Target:
+    """Where a request goes: the provider (for stats), its upstream, the path there, and the API
+    whose body sotto scans (None: not a scanned endpoint)."""
+    provider: str
+    base: str
+    path: str
+    api: str | None
+
+
+def api_of(path: str) -> str | None:
+    if path in MESSAGES:
+        return "messages"
+    if path.endswith("/responses") or path.endswith("/responses/compact"):
+        return "responses"
+    return None
+
+
 class Proxy:
     def __init__(self, redactor: Redactor, upstream: str = UPSTREAM, policy: dict[str, str] | None = None,
                  client: httpx.AsyncClient | None = None, stats: Stats | None = None, stats_token: str | None = None,
-                 info: dict | None = None, observe=None):
+                 info: dict | None = None, observe=None, openai_upstream: str = OPENAI_UPSTREAM,
+                 chatgpt_upstream: str = CHATGPT_UPSTREAM):
         self.redactor = redactor
         self.upstream = upstream.rstrip("/")
+        self.prefixed = {"/openai": openai_upstream.rstrip("/"), "/chatgpt": chatgpt_upstream.rstrip("/")}
         self.policy = policy or DEFAULT_POLICY
         self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10))
         self.stats = stats or Stats()
@@ -69,6 +119,13 @@ class Proxy:
         self._scan_lock = threading.Lock()
         self.app = Starlette(routes=[Route("/{path:path}", self.handle, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])])
 
+    def target(self, path: str) -> Target:
+        for prefix, base in self.prefixed.items():
+            if path.startswith(prefix + "/"):
+                rest = path[len(prefix):]
+                return Target("openai", base, rest, api_of(rest))
+        return Target(provider_of(self.upstream), self.upstream, path, "messages" if path in MESSAGES else None)
+
     # --- Entry point --------------------------------------------------------------
 
     async def handle(self, request: Request) -> Response:
@@ -77,17 +134,18 @@ class Proxy:
             return api_error(403, "permission_error", "requests must come from this machine")
         if path.startswith("/_sotto/"):
             return self._local(request, path)
-        if path in SCANNED and request.method == "POST":
-            return await self._scanned(request, path)
+        t = self.target(path)
+        if t.api and request.method == "POST":
+            return await self._scanned(request, t)
         body = await request.body()
         if self._observe():
-            return await self._forward_raw(request, path, body, outcome="observed")
+            return await self._forward_raw(request, t, body, outcome="observed")
         if body or request.method not in ("GET", "HEAD", "OPTIONS"):
             # An endpoint sotto does not scan must not carry content out unscanned.
             log.warning("blocked %s %s: endpoint is not scanned", request.method, path)
-            self.stats.record(path, "blocked", 403, origin=self._origin(request))
+            self.stats.record(path, "blocked", 403, origin=self._origin(request, t))
             return api_error(403, "permission_error", f"refusing to forward {request.method} {path}: sotto does not scan this endpoint")
-        return await self._forward_raw(request, path)
+        return await self._forward_raw(request, t)
 
     def _local(self, request: Request, path: str) -> Response:
         if path == "/_sotto/health":
@@ -122,103 +180,115 @@ class Proxy:
 
     # --- Scanned endpoints ----------------------------------------------------------
 
-    async def _scanned(self, request: Request, path: str) -> Response:
+    async def _scanned(self, request: Request, t: Target) -> Response:
+        path, origin = request.url.path, self._origin(request, t)
         raw = await request.body()
         if self._observe():
-            return await self._observed(request, path, raw)
+            return await self._observed(request, t, raw)
         try:
-            body = json.loads(raw)
+            body = json.loads(decode_body(raw, request.headers.get("content-encoding", "")))
             if not isinstance(body, dict):
                 raise ValueError("not an object")
-        except (ValueError, UnicodeDecodeError):
-            self.stats.record(path, "rejected", 400, origin=self._origin(request))
-            return api_error(400, "invalid_request_error", "request body is not a JSON object; nothing was sent")
+        except Exception:
+            self.stats.record(path, "rejected", 400, origin=origin)
+            return api_error(400, "invalid_request_error", "request body is not a JSON object sotto can read; nothing was sent")
         started = time.perf_counter()
         try:
-            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body)
+            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api)
         except Exception as e:  # any detector or redaction failure: block, never send raw
             log.error("blocked %s: scan failed (%s)", path, type(e).__name__)
-            self.stats.record(path, "blocked", 500, origin=self._origin(request))
+            self.stats.record(path, "blocked", 500, origin=origin)
             return api_error(500, "api_error", "could not scan this request, so it was not sent")
         scan_ms = (time.perf_counter() - started) * 1000
         payload = json.dumps(masked, ensure_ascii=False).encode()
-        url = self.upstream + path + (f"?{request.url.query}" if request.url.query else "")
+        url = self._url(request, t)
         headers = self._headers(request)
         try:
-            if masked.get("stream") and path == "/v1/messages":
-                return await self._stream(url, headers, payload, path, scan_ms, counts, new, origin=self._origin(request))
+            if masked.get("stream") and t.path not in ("/v1/messages/count_tokens",):
+                return await self._stream(url, headers, payload, path, t, scan_ms, counts, new, origin=origin)
             resp = await self.client.post(url, headers=headers, content=payload)
         except httpx.HTTPError as e:
             log.error("upstream error on %s: %s", path, type(e).__name__)
-            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=self._origin(request))
+            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin)
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
         restored = Counter()
         content = resp.content
-        if path == "/v1/messages" and resp.status_code < 300:
+        if t.path != "/v1/messages/count_tokens" and resp.status_code < 300:
             try:
                 data = json.loads(content)
-                content = json.dumps(await anyio.to_thread.run_sync(self._restore, data, restored), ensure_ascii=False).encode()
+                content = json.dumps(await anyio.to_thread.run_sync(self._restore, data, restored, t.api), ensure_ascii=False).encode()
             except ValueError:
                 pass  # not JSON: pass it through as it came
         self._warn_unresolved(path, restored)
-        self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new, origin=self._origin(request))
+        self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new, origin=origin)
         log.info("%s -> %d redacted=%s restored=%s scan=%.0fms", path, resp.status_code, dict(counts), dict(restored), scan_ms)
         return Response(content, status_code=resp.status_code, headers=self._response_headers(resp))
 
-    async def _observed(self, request: Request, path: str, raw: bytes) -> Response:
+    async def _observed(self, request: Request, t: Target, raw: bytes) -> Response:
         """Observe mode: count what masking would have done, then send the request unchanged."""
+        path, origin = request.url.path, self._origin(request, t)
         counts, new, scan_ms, body = Counter(), 0, None, None
         try:
-            body = json.loads(raw)
+            body = json.loads(decode_body(raw, request.headers.get("content-encoding", "")))
             if isinstance(body, dict):
                 started = time.perf_counter()
-                _, counts, new = await anyio.to_thread.run_sync(self._redact, body)
+                _, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api)
                 scan_ms = (time.perf_counter() - started) * 1000
         except Exception as e:  # observing never stops a request
             log.warning("observe %s: not scanned (%s)", path, type(e).__name__)
-        url = self.upstream + path + (f"?{request.url.query}" if request.url.query else "")
-        headers = self._headers(request)
+        url = self._url(request, t)
+        headers = self._headers(request, keep_encoding=True)
         try:
-            if path == "/v1/messages" and isinstance(body, dict) and body.get("stream"):
-                return await self._stream(url, headers, raw, path, scan_ms, counts, new, outcome="observed", origin=self._origin(request))
+            if t.path != "/v1/messages/count_tokens" and isinstance(body, dict) and body.get("stream"):
+                return await self._stream(url, headers, raw, path, t, scan_ms, counts, new, outcome="observed", origin=origin)
             resp = await self.client.post(url, headers=headers, content=raw)
         except httpx.HTTPError as e:
-            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=self._origin(request))
+            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin)
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
-        self.stats.record(path, "observed", resp.status_code, scan_ms, counts, new=new, origin=self._origin(request))
+        self.stats.record(path, "observed", resp.status_code, scan_ms, counts, new=new, origin=origin)
         log.info("%s -> %d (observe: sent unmasked) would mask=%s", path, resp.status_code, dict(counts))
         return Response(resp.content, status_code=resp.status_code, headers=self._response_headers(resp))
 
-    def _origin(self, request: Request) -> tuple[str, str]:
+    @staticmethod
+    def _origin(request: Request, t: Target) -> tuple[str, str]:
         """(client, provider) for the stats: who sent the request, and where it goes."""
-        return client_of(request.headers.get("user-agent", "")), provider_of(self.upstream)
+        named = "".join(c for c in request.headers.get("x-sotto-client", "").lower() if c.isalnum() or c in "-_.")[:32]
+        return named or client_of(request.headers.get("user-agent", "")), t.provider
 
     @staticmethod
     def _warn_unresolved(path: str, restored: Counter) -> None:
         if restored.get("unresolved"):
             log.warning("%s: %d placeholder(s) in the reply could not be restored (made by another sotto process, "
-                        "or before a restart); they reach Claude Code as placeholders", path, restored["unresolved"])
+                        "or before a restart); they reach the client as placeholders", path, restored["unresolved"])
 
-    def _redact(self, body: dict) -> tuple[dict, Counter, int]:
+    def _redact(self, body: dict, api: str = "messages") -> tuple[dict, Counter, int]:
         """The masked body, spans masked per type, and how many of them were in text this request
-        brought (the rest are earlier turns, which Claude Code resends every time)."""
+        brought (the rest are earlier turns, which clients resend every time)."""
         with self._scan_lock:
             self.redactor.counts.clear()
             self.redactor.fresh = 0
-            masked = self.redactor.redact_request(body)
+            if api == "responses":
+                masked = self.redactor.redact_responses_request(body)
+            else:
+                masked = self.redactor.redact_request(body)
             return masked, Counter(self.redactor.counts), self.redactor.fresh
 
-    def _restore(self, data: dict, counts: Counter) -> dict:
+    def _restore(self, data: dict, counts: Counter, api: str = "messages") -> dict:
         with self._scan_lock:
+            if api == "responses":
+                return restore_responses(data, self.redactor.vault, self.policy, counts)
             return restore_response(data, self.redactor.vault, self.policy, counts)
 
-    async def _stream(self, url, headers, payload, path, scan_ms, counts, new=0, outcome="forwarded", origin=None) -> Response:
+    async def _stream(self, url, headers, payload, path, t: Target, scan_ms, counts, new=0, outcome="forwarded",
+                      origin=None) -> Response:
         req = self.client.build_request("POST", url, headers=headers, content=payload)
         resp = await self.client.send(req, stream=True)
         restored = Counter()
-        is_sse = resp.status_code < 300 and resp.headers.get("content-type", "").startswith("text/event-stream")
+        # A requested stream that succeeds is SSE; the ChatGPT backend sends it without a content type.
+        is_sse = resp.status_code < 300
+        kind = ResponsesStreamRestorer if t.api == "responses" else StreamRestorer
         # Observed requests went out unmasked: there is nothing to restore.
-        restorer = StreamRestorer(self.redactor.vault, self.policy, restored) if is_sse and outcome != "observed" else None
+        restorer = kind(self.redactor.vault, self.policy, restored) if is_sse and outcome != "observed" else None
 
         async def body():
             try:
@@ -241,20 +311,27 @@ class Proxy:
 
     # --- Plumbing -------------------------------------------------------------------
 
-    async def _forward_raw(self, request: Request, path: str, body: bytes = b"", outcome: str = "forwarded") -> Response:
-        url = self.upstream + path + (f"?{request.url.query}" if request.url.query else "")
+    @staticmethod
+    def _url(request: Request, t: Target) -> str:
+        return t.base + t.path + (f"?{request.url.query}" if request.url.query else "")
+
+    async def _forward_raw(self, request: Request, t: Target, body: bytes = b"", outcome: str = "forwarded") -> Response:
+        path = request.url.path
         try:
-            resp = await self.client.request(request.method, url, headers=self._headers(request), content=body or None)
+            resp = await self.client.request(request.method, self._url(request, t),
+                                             headers=self._headers(request, keep_encoding=True), content=body or None)
         except httpx.HTTPError as e:
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
-        self.stats.record(path, outcome, resp.status_code, origin=self._origin(request))
+        self.stats.record(path, outcome, resp.status_code, origin=self._origin(request, t))
         log.info("%s %s -> %d (not scanned: no body)", request.method, path, resp.status_code)
         return Response(resp.content, status_code=resp.status_code, headers=self._response_headers(resp))
 
     @staticmethod
-    def _headers(request: Request) -> list[tuple[str, str]]:
+    def _headers(request: Request, keep_encoding: bool = False) -> list[tuple[str, str]]:
         # Auth headers (x-api-key, authorization) pass through unchanged and are never logged.
-        headers = [(k, v) for k, v in request.headers.items() if k.lower() not in HOP_HEADERS]
+        # A scanned body is re-encoded as plain JSON, so its content-encoding no longer applies.
+        drop = HOP_HEADERS if keep_encoding else HOP_HEADERS | {"content-encoding"}
+        headers = [(k, v) for k, v in request.headers.items() if k.lower() not in drop]
         headers.append(("accept-encoding", "identity"))
         return headers
 
