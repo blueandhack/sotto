@@ -1,6 +1,44 @@
 import Foundation
 import Observation
 
+/// What the detectors did with newly scanned text (the pipeline's report). Counts only.
+struct Detection: Decodable, Sendable {
+    struct Stages: Decodable, Sendable { var found = 0, allowed = 0, passed = 0, masked = 0 }
+    struct Rule: Decodable, Sendable, Identifiable { var rule: String; var user: Bool; var n: Int; var id: String { rule } }
+    var funnel: [String: Int] = [:]
+    var types: [String: Stages] = [:]
+    var sources: [String: Int] = [:]
+    var rules: [Rule] = []
+    var pass: [String] = []
+
+    subscript(key: String) -> Int? {
+        get { funnel[key] }
+        set { funnel[key] = newValue }
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        // Flat counts from older services; the report adds types, sources, rules and pass.
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        for key in c.allKeys {
+            if let n = try? c.decode(Int.self, forKey: key) { funnel[key.stringValue] = n }
+        }
+        types = (try? c.decode([String: Stages].self, forKey: AnyKey("types"))) ?? [:]
+        sources = (try? c.decode([String: Int].self, forKey: AnyKey("sources"))) ?? [:]
+        rules = (try? c.decode([Rule].self, forKey: AnyKey("rules"))) ?? []
+        pass = (try? c.decode([String].self, forKey: AnyKey("pass"))) ?? []
+    }
+
+    struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init(_ s: String) { stringValue = s }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+}
+
 /// The stats feed from `GET /_sotto/stats`. Counts, types and timestamps only: the feed
 /// never carries a sensitive value or a placeholder, so this app cannot show one.
 struct Snapshot: Decodable, Sendable {
@@ -56,7 +94,7 @@ struct Snapshot: Decodable, Sendable {
     var redacted: [String: Int] = [:]
     var restored: [String: Int] = [:]
     var funnel = Funnel()
-    var detection: [String: Int] = [:]
+    var detection = Detection()
     var timeline: [Minute] = []
     var scanMs = Latency()
     var recent: [Event] = []
@@ -306,9 +344,19 @@ struct SampleFeed {
         snap.funnel.masked = snap.maskedTotal
         snap.funnel.restored = snap.restoredTotal
         let masked = snap.maskedTotal
-        snap.detection = ["candidates_rules": masked / 2, "candidates_model": masked * 3,
-                          "after_refinement": Int(Double(masked) * 1.25), "after_allowlist": Int(Double(masked) * 1.08),
-                          "masked": masked]
+        snap.detection.funnel = ["candidates_rules": masked / 2, "candidates_model": masked * 3,
+                                 "after_refinement": Int(Double(masked) * 1.25), "after_allowlist": Int(Double(masked) * 1.08),
+                                 "masked": masked]
+        snap.detection.types = [
+            "SECRET": .init(found: 64, allowed: 3, passed: 0, masked: 61), "EMAIL": .init(found: 41, allowed: 2, passed: 0, masked: 39),
+            "PERSON": .init(found: 58, allowed: 0, passed: 58, masked: 0), "PHONE": .init(found: 12, allowed: 0, passed: 0, masked: 12),
+            "ACCOUNT": .init(found: 9, allowed: 1, passed: 0, masked: 8), "URL": .init(found: 6, allowed: 0, passed: 0, masked: 6),
+            "ADDRESS": .init(found: 3, allowed: 0, passed: 0, masked: 3), "DATE": .init(found: 2, allowed: 0, passed: 2, masked: 0)]
+        snap.detection.sources = ["rules": 52, "model": 69, "user": 8]
+        snap.detection.rules = [.init(rule: "github-token", user: false, n: 21), .init(rule: "secret-assignment", user: false, n: 14),
+                                .init(rule: "Employee ID", user: true, n: 8), .init(rule: "aws-access-key", user: false, n: 6),
+                                .init(rule: "connection-string-password", user: false, n: 4)]
+        snap.detection.pass = ["PERSON", "DATE"]
         snap.scanMs = .init(p50: 21, p95: 88, n: 400)
         snap.vaultSize = 37
         for i in 0..<14 { snap.recent.append(event(at: now - Double(14 - i) * 7)) }
@@ -369,10 +417,10 @@ struct SampleFeed {
             else if e.scanMs != nil { snap.funnel.clean = (snap.funnel.clean ?? 0) + 1 }
             for (k, v) in e.redacted {
                 snap.redacted[k, default: 0] += v; snap.funnel.masked += v
-                snap.detection["masked", default: 0] += v
-                snap.detection["after_allowlist", default: 0] += v
-                snap.detection["after_refinement", default: 0] += v + 1
-                snap.detection["candidates_model", default: 0] += v * 3
+                snap.detection.funnel["masked", default: 0] += v
+                snap.detection.funnel["after_allowlist", default: 0] += v
+                snap.detection.funnel["after_refinement", default: 0] += v + 1
+                snap.detection.funnel["candidates_model", default: 0] += v * 3
             }
             for (k, v) in e.restored { snap.restored[k, default: 0] += v; snap.funnel.restored += v }
             if var last = snap.timeline.last {

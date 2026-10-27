@@ -6,7 +6,7 @@ A menu-bar app that sets sotto up, runs it in the background and shows what it d
 
 - **Overview:** key numbers and the live flow: two flow diagrams on shared columns, requests going out (client → sotto's scan → clean, masked, observed or blocked → provider) and replies coming back (provider → sotto's restore → client). Band width is the number of requests over the last hour, 24 hours or 7 days, and each live request travels its route as a dot. Each coding agent (Claude Code, Codex, pi) gets its own band, told apart by its User-Agent.
 - **Activity:** recent requests with what was masked and restored, plus a per-minute chart.
-- **Detection:** the request and detection funnels, and masked values by type.
+- **Detection:** per type, how many values were found, allowed by an exception, passed through by your settings, and masked, with a switch to stop masking a type (names, dates…; secrets ask first); which detector found them (built-in rules, the local model, your rules) and the top rules; and your own rules: patterns always masked and exceptions never masked.
 - **Performance:** scan time against the 150 ms budget, and its distribution.
 - **Settings:** Setup (download the model, start the background service, protect Claude Code), excluded projects (`sotto exclude`), appearance (System, Light or Dark), preview data, connection details.
 

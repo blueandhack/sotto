@@ -101,6 +101,18 @@ sotto observe off      # mask again
 
 Observe mode shows what sotto would catch without changing anything: requests go to Anthropic exactly as Claude Code sent them, nothing is blocked, and the dashboard says so on every page. Running proxies switch on their next request; if the config file becomes invalid, they mask.
 
+### Choose what gets masked
+
+```sh
+sotto types                          # which types are masked
+sotto types pass person date         # let names and dates through unmasked; `sotto types mask person` undoes it
+sotto rules mask 'EMP-\d{6}' --name "Employee ID" --type account   # always mask your own pattern
+sotto rules allow acme-test-key      # never mask this exact text (or --pattern for a regex)
+sotto rules list                     # and `sotto rules remove mask 0`
+```
+
+Letting secrets through needs `--yes`. Your own mask rules apply even with personal data off. Running proxies pick up every change on their next request; the Mac app's Detection page edits the same settings and shows, per type, how many values were found, allowed by an exception, passed through by your settings, and masked.
+
 ### Leave a project out
 
 ```sh
@@ -125,6 +137,10 @@ Optional, in `~/.config/sotto/config.toml`. Unknown keys and bad values are erro
 [detect]
 pii = false            # also mask names, emails, phones, addresses, account numbers
 observe = false        # count what would be masked, but send requests UNMASKED (`sotto observe on|off`)
+pass = []              # types never masked, e.g. ["PERSON", "DATE"] (`sotto types pass person`)
+
+[rules]                # your own patterns, always masked; with a group, only group 1 (`sotto rules mask`)
+mask = [{ name = "Employee ID", pattern = "EMP-\\d{6}", type = "ACCOUNT" }]
 
 [allowlist]            # added to the built-in list (documented example keys, test cards)
 strings = []

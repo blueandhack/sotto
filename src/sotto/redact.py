@@ -39,6 +39,7 @@ class Redactor:
         self.vault = vault
         self._cache: OrderedDict[bytes, tuple[Span, ...]] = OrderedDict()
         self._cache_size = cache_size
+        self._generation = getattr(detector, "generation", 0)
         self.counts: Counter[str] = Counter()  # spans masked per type since the last reset
         # Spans masked in text this redactor had not seen before, since the last reset: what a
         # request brought that is new. Claude Code resends the whole conversation every turn.
@@ -47,6 +48,10 @@ class Redactor:
     def _detect(self, text: str) -> tuple[tuple[Span, ...], bool]:
         """Detector spans, cached per text: the conversation history is resent every turn.
         Also says whether the text was seen before."""
+        generation = getattr(self.detector, "generation", 0)
+        if generation != self._generation:  # the settings changed: detect again
+            self._cache.clear()
+            self._generation = generation
         key = hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
         hit = self._cache.get(key)
         if hit is not None:
@@ -67,7 +72,9 @@ class Redactor:
         spans = list(found)
         known = self.vault.known_values()
         if known is not None:
-            spans += [Span(m.start(), m.end(), self.vault.kind_of(m.group()), 1.0, "known") for m in known.finditer(text)]
+            passed = getattr(self.detector, "pass_types", frozenset())
+            spans += [Span(m.start(), m.end(), kind, 1.0, "known") for m in known.finditer(text)
+                      if (kind := self.vault.kind_of(m.group())) not in passed]
         return merge(spans), seen
 
     def redact_text(self, text: str) -> str:

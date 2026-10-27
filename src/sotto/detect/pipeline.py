@@ -53,6 +53,11 @@ class Pipeline:
         self.allowlist = rules.allowlist if rules else None
         # Detection funnel for the stats feed: counts only, for newly scanned text.
         self.funnel: Counter[str] = Counter()
+        self.by_type: Counter[tuple[str, str]] = Counter()  # (type, found|allowed|passed|masked)
+        self.by_source: Counter[str] = Counter()  # rules, model, user
+        self.by_rule: Counter[str] = Counter()  # rules:<id> or user:<name>
+        self.pass_types: frozenset[str] = frozenset()  # types never masked ([detect] pass)
+        self.generation = 0
         parts = [p for p, on in (("rules", rules), (getattr(pf, "name", "pf"), pf)) if on]
         flags = [f for f, on in (("pii", pii), ("raw", not refine), ("rawpii", not refine_pii)) if on]
         self.name = "+".join(parts) + "".join(f":{f}" for f in flags)
@@ -67,18 +72,57 @@ class Pipeline:
         spans += self.model_spans(text)
         if self.pii and self.refine_pii_spans:
             spans = [t for s in spans if (t := self.trim_pii(text, s)) is not None
-                     and (t.type == "SECRET" or t.source.startswith("rules") or self.keep_pii(text, t))]
-        if not self.pii:
-            spans = [s for s in spans if s.type == "SECRET"]
+                     and (t.type == "SECRET" or t.source.startswith(("rules", "user:")) or self.keep_pii(text, t))]
+        if not self.pii:  # your own rules apply whatever their type
+            spans = [s for s in spans if s.type == "SECRET" or s.source.startswith("user:")]
         refined = len(spans)
+        # Counted per value, after overlapping hits merge: three rules on one token are one secret.
+        for s in merge(spans):
+            self.by_type[(s.type, "found")] += 1
         if self.allowlist:
-            spans = self.allowlist.filter(text, spans)
+            kept = self.allowlist.filter(text, spans)
+            for s in merge([s for s in spans if s not in set(kept)]):
+                self.by_type[(s.type, "allowed")] += 1
+            spans = kept
+        allowed = len(spans)
+        if self.pass_types:
+            for s in merge([s for s in spans if s.type in self.pass_types]):
+                self.by_type[(s.type, "passed")] += 1
+            spans = [s for s in spans if s.type not in self.pass_types]
         merged = merge(spans)
+        for s in merged:
+            self.by_type[(s.type, "masked")] += 1
+            # merge joins sources with "|": credit the user's rule first, then rules, then the model.
+            parts = s.source.split("|")
+            first = next((x for x in parts if x.startswith("user:")), None) or next((x for x in parts if x.startswith("rules")), None)
+            self.by_source["user" if first and first.startswith("user:") else "rules" if first else "model"] += 1
+            if first:
+                self.by_rule[first] += 1
         # Stages: raw candidates -> after refinement -> after the allowlist -> masked (overlaps merged).
         self.funnel["after_refinement"] += refined
-        self.funnel["after_allowlist"] += len(spans)
+        self.funnel["after_allowlist"] += allowed
         self.funnel["masked"] += len(merged)
         return merged
+
+    # --- Settings from the config, applied while running -------------------------------
+
+    def apply_settings(self, pass_types=(), mask_rules=(), allow_strings=(), allow_patterns=()) -> None:
+        """Types never masked, your own rules, your allowlist. Bumps `generation` so cached
+        detections (the redactor's) are dropped."""
+        self.pass_types = frozenset(pass_types)
+        if self.rules:
+            self.rules.set_user_rules(list(mask_rules))
+            self.rules.allowlist.set_user(allow_strings, allow_patterns)
+        self.generation += 1
+
+    def report(self) -> dict:
+        """Counts for the stats feed: the funnel, then per type and per detector. Never values."""
+        from . import TYPES
+
+        types = {t: {stage: self.by_type[(t, stage)] for stage in ("found", "allowed", "passed", "masked")} for t in TYPES}
+        top = [{"rule": k.split(":", 1)[1], "user": k.startswith("user:"), "n": n} for k, n in self.by_rule.most_common(8)]
+        return {**self.funnel, "types": types, "sources": dict(self.by_source), "rules": top,
+                "pass": sorted(self.pass_types)}
 
     def model_spans(self, text: str) -> list[Span]:
         """The model's spans: secrets refined, personal data only when enabled."""
@@ -196,12 +240,17 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=(), allow_patterns=()) -> Pipeline:
+def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=(), allow_patterns=(),
+                     pass_types=(), mask_rules=()) -> Pipeline:
     """The v1 pipeline. Fails loudly, never silently weaker, when the L2 model is missing."""
     rules = RulesDetector()
-    rules.allowlist.extend(allow_strings, allow_patterns)
+
+    def configured(p: Pipeline) -> Pipeline:
+        p.apply_settings(pass_types, mask_rules, allow_strings, allow_patterns)
+        return p
+
     if rules_only:
-        return Pipeline(rules, None, pii=pii)
+        return configured(Pipeline(rules, None, pii=pii))
     from .pfserve import PfServe, PfServeError, find_binary, find_model
 
     binary, model = find_binary(), find_model()
@@ -213,4 +262,4 @@ def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=
         pf = PfServe(binary, model)
     except (PfServeError, OSError) as e:
         raise ModelUnavailable(f"the Privacy Filter model did not load ({e}); pass --rules-only to run without it.") from e
-    return Pipeline(rules, pf, pii=pii)
+    return configured(Pipeline(rules, pf, pii=pii))

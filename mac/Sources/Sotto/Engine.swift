@@ -24,6 +24,22 @@ final class Engine {
         var serveRunning: Bool
         var excluded: [Excluded] = []
         var observe: Bool?
+        var pii: Bool?
+        var pass: [String]?
+        var rules: Rules?
+    }
+
+    /// `[rules] mask` and the allowlist, as `sotto status` reports them.
+    struct Rules: Decodable, Equatable {
+        struct Mask: Decodable, Equatable, Identifiable {
+            var name: String
+            var pattern: String
+            var type: String
+            var id: String { name + pattern }
+        }
+        var mask: [Mask] = []
+        var allowStrings: [String] = []
+        var allowPatterns: [String] = []
     }
 
     /// A project sent straight to the API, around sotto (`sotto exclude`).
@@ -135,6 +151,35 @@ final class Engine {
         }
     }
 
+    // MARK: What gets masked (`sotto types`, `sotto rules`)
+
+    /// Let a type through unmasked, or mask it again. Secrets need `confirmed`.
+    func setPass(_ type: String, _ pass: Bool, confirmed: Bool = false) async {
+        await act {
+            var args = ["types", pass ? "pass" : "mask", type]
+            if confirmed { args.append("--yes") }
+            try await self.check(args)
+        }
+    }
+
+    func addMaskRule(name: String, pattern: String, type: String) async {
+        await act { try await self.check(["rules", "mask", pattern, "--name", name, "--type", type]) }
+    }
+
+    func addException(_ value: String, pattern: Bool) async {
+        await act { try await self.check(["rules", "allow", value] + (pattern ? ["--pattern"] : [])) }
+    }
+
+    /// kind: mask, allow or allow-pattern; index as `sotto rules list` numbers them.
+    func removeRule(_ kind: String, _ index: Int) async {
+        await act { try await self.check(["rules", "remove", kind, String(index)]) }
+    }
+
+    private func check(_ args: [String]) async throws {
+        let out = try await run(args)
+        if out.code != 0 { throw EngineError(out.lastLine) }
+    }
+
     func exclude(_ folder: URL) async {
         await act {
             let out = try await self.run(["exclude", folder.path])
@@ -217,7 +262,10 @@ final class Engine {
                           pfServe: "Sotto.app/Contents/Resources/bin/pf-serve",
                           protect: .init(settings: "~/.claude/settings.json", on: true, baseUrl: "http://127.0.0.1:7788"),
                           port: 7788, serveRunning: true,
-                          excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)])
+                          excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)],
+                          pii: true, pass: ["PERSON", "DATE"],
+                          rules: .init(mask: [.init(name: "Employee ID", pattern: "EMP-\\d{6}", type: "ACCOUNT")],
+                                       allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"]))
         e.serviceStatus = .enabled
         return e
     }

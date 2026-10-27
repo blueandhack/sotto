@@ -173,7 +173,8 @@ class Proxy:
             events = history.page(before, limit, q.get("kind")) if history else []
             return JSONResponse({"events": events})
         if path == "/_sotto/stats" and request.method == "GET":
-            detection = dict(getattr(self.redactor.detector, "funnel", {}))
+            detector = self.redactor.detector
+            detection = detector.report() if hasattr(detector, "report") else dict(getattr(detector, "funnel", {}))
             return JSONResponse(self.stats.snapshot(upstream=self.upstream, vault_size=len(self.redactor.vault),
                                                     detection=detection, **self.info, observe=self._observe()))
         return api_error(404, "not_found_error", "no such sotto endpoint")

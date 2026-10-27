@@ -29,7 +29,7 @@ struct Dashboard: View {
                 switch page {
                 case .overview: OverviewPage(store: store)
                 case .activity: ActivityPage(store: store)
-                case .detection: DetectionPage(store: store)
+                case .detection: DetectionPage(store: store, engine: engine)
                 case .performance: PerformancePage(store: store)
                 case .settings: SettingsPage(store: store, engine: engine, appearance: $appearance)
                 }
@@ -175,7 +175,7 @@ struct ObserveBanner: View {
     }
 }
 
-private struct PreviewToggle: View {
+struct PreviewToggle: View {
     var store: StatsStore
     var body: some View {
         PillButton(title: store.sampleMode ? "Exit preview" : "Preview", icon: store.sampleMode ? "xmark" : "sparkles") {
@@ -251,47 +251,6 @@ struct ActivityPage: View {
         case .blocked: "Never sent: scanning failed or the endpoint is not scanned"
         case .observed: "Observe mode: sent unmasked, only counted"
         case nil: "Kept across restarts in ~/.config/sotto/history.jsonl"
-        }
-    }
-}
-
-struct DetectionPage: View {
-    var store: StatsStore
-
-    var body: some View {
-        let s = store.snapshot
-        VStack(spacing: 16) {
-            PageHeader(title: "Detection", subtitle: "How raw findings become masked values") { PreviewToggle(store: store) }
-            HStack(spacing: 12) {
-                Card(title: "Request funnel", subtitle: "Share of traffic that carried something sensitive") {
-                    FunnelView(stages: s.requestStages)
-                }
-                Card(title: "Detection funnel", subtitle: "Candidates narrowed by refinement and the allowlist") {
-                    FunnelView(stages: s.detectionStages)
-                }
-            }
-            .frame(height: 230)
-            HStack(alignment: .top, spacing: 12) {
-                Card(title: "Masked by type") { TypeBars(counts: s.redacted) }
-                    .fixedSize(horizontal: false, vertical: true)
-                Card(title: "How sotto decides") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        bullet("Rules find structured secrets: provider keys, private keys, tokens, connection strings.")
-                        bullet("A local model (OpenAI Privacy Filter) finds secrets in context\(s.pii == true ? ", plus names, emails and phones" : "").")
-                        bullet("Refinement drops what the model gets wrong: IDs, hashes, timestamps, paths, placeholders.")
-                        bullet("Every masked value becomes a placeholder; the real value never leaves this Mac.")
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func bullet(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle().fill(Theme.accent).frame(width: 5, height: 5).offset(y: -2)
-            Text(text).font(.system(size: 12)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

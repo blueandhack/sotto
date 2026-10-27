@@ -25,17 +25,23 @@ class Rule:
     type: str = "SECRET"
     filters: str | bool = "placeholder"
     prose_guard: bool = False
+    user: bool = False  # written by the user ([rules] mask), reported as user:<name>
 
 
 class Allowlist:
     def __init__(self, strings=(), patterns=()):
-        self.strings = frozenset(strings)
-        self.patterns = [re.compile(p) for p in patterns]
+        self._builtin = (frozenset(strings), [re.compile(p) for p in patterns])
+        self.strings, self.patterns = self._builtin[0], list(self._builtin[1])
 
     def extend(self, strings=(), patterns=()) -> None:
         """Add user entries; the built-in ones always stay."""
         self.strings = self.strings | frozenset(strings)
         self.patterns += [re.compile(p) for p in patterns]
+
+    def set_user(self, strings=(), patterns=()) -> None:
+        """Replace the user entries (the config changed); the built-in ones always stay."""
+        self.strings = self._builtin[0] | frozenset(strings)
+        self.patterns = self._builtin[1] + [re.compile(p) for p in patterns]
 
     def allows(self, value: str) -> bool:
         if value in self.strings:
@@ -126,6 +132,17 @@ class RulesDetector:
             self._skip_before = re.compile(self.entropy["skip_before"])
         self.luhn = cfg.get("luhn", {"enabled": False})
         self.iban = cfg.get("iban", {"enabled": False})
+        self.user_rules: list[Rule] = []
+
+    def set_user_rules(self, rules: list[dict]) -> None:
+        """Your own patterns ([rules] mask): always masked, never filtered as placeholders.
+        A pattern with a group masks group 1, else the whole match."""
+        out = []
+        for r in rules:
+            rx = re.compile(r["pattern"])
+            out.append(Rule(id=r["name"], regex=rx, group=1 if rx.groups else 0, type=r.get("type", "SECRET"),
+                            confidence=1.0, filters=False, user=True))
+        self.user_rules = out
 
     def looks_like_placeholder(self, value: str, level: str | bool = "placeholder") -> bool:
         if not level:
@@ -136,7 +153,7 @@ class RulesDetector:
     def detect(self, text: str) -> list[Span]:
         lowered = text.lower()
         spans: list[Span] = []
-        for rule in self.rules:
+        for rule in self.rules + self.user_rules:
             if rule.keywords and not any(k in lowered for k in rule.keywords):
                 continue
             for m in rule.regex.finditer(text):
@@ -148,7 +165,7 @@ class RulesDetector:
                     continue
                 if rule.prose_guard and _PROSE_WORD.fullmatch(m.group(rule.group)) and _PROSE_NEXT.match(text, end):
                     continue
-                spans.append(Span(start, end, rule.type, rule.confidence, f"{SOURCE}:{rule.id}"))
+                spans.append(Span(start, end, rule.type, rule.confidence, f"user:{rule.id}" if rule.user else f"{SOURCE}:{rule.id}"))
         if self.entropy.get("enabled"):
             spans.extend(self._entropy_spans(text))
         if self.luhn.get("enabled"):

@@ -62,8 +62,8 @@ def _pipeline_or_exit(pii: bool, rules_only: bool, who: str):
 
     cfg = _config()
     try:
-        return default_pipeline(pii=pii or cfg.pii, rules_only=rules_only,
-                                allow_strings=cfg.allow_strings, allow_patterns=cfg.allow_patterns)
+        return default_pipeline(pii=pii or cfg.pii, rules_only=rules_only, allow_strings=cfg.allow_strings,
+                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
     except ModelUnavailable as e:
         typer.echo(f"sotto {who}: {e}", err=True)
         raise typer.Exit(2)
@@ -264,12 +264,12 @@ def protect(
 @app.command()
 def observe(action: str = typer.Argument("status", help="on, off, or status")) -> None:
     """Observe only (on): count what would be masked, but send every request unchanged. Off: mask."""
-    from .config import CONFIG_FILE, ConfigError, set_detect_flag
+    from .config import ConfigError, set_detect_flag
 
     cfg = _config()
     if action in ("on", "off"):
         try:
-            set_detect_flag("observe", action == "on", cfg.path or CONFIG_FILE)
+            set_detect_flag("observe", action == "on", cfg.path)
         except (ConfigError, OSError) as e:
             typer.echo(f"sotto observe: {e}", err=True)
             raise typer.Exit(1)
@@ -283,6 +283,144 @@ def observe(action: str = typer.Argument("status", help="on, off, or status")) -
                else "masking: sensitive values are replaced before requests leave this Mac", err=True)
     if action != "status":
         typer.echo("Running proxies switch on their next request.", err=True)
+
+
+@app.command()
+def types(
+    action: str = typer.Argument("list", help="list, mask or pass"),
+    names: list[str] = typer.Argument(None, help="Types: SECRET, ACCOUNT, PERSON, EMAIL, PHONE, ADDRESS, URL, DATE."),
+    yes: bool = typer.Option(False, "--yes", help="Confirm letting secrets through unmasked."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON."),
+) -> None:
+    """Which types are masked. `pass` lets a type through unmasked (e.g. names); `mask` masks it again."""
+    import json
+
+    from .config import ConfigError, set_value
+    from .detect import TYPES
+
+    cfg = _config()
+    wanted = [n.upper() for n in names or []]
+    if action not in ("list", "mask", "pass") or any(n not in TYPES for n in wanted) or (action != "list" and not wanted):
+        typer.echo(f"sotto types: use list, or mask|pass with types from {', '.join(TYPES)}", err=True)
+        raise typer.Exit(2)
+    if action == "pass" and "SECRET" in wanted and not yes:
+        typer.echo("sotto types: letting secrets through sends API keys and passwords to the provider unmasked; "
+                   "add --yes if you mean it", err=True)
+        raise typer.Exit(2)
+    passed = set(cfg.pass_types)
+    if action != "list":
+        passed = passed | set(wanted) if action == "pass" else passed - set(wanted)
+        try:
+            set_value("detect", "pass", [t for t in TYPES if t in passed], cfg.path)
+        except (ConfigError, OSError) as e:
+            typer.echo(f"sotto types: {e}", err=True)
+            raise typer.Exit(1)
+    personal = [t for t in TYPES if t != "SECRET"]
+    state = {t: ("pass" if t in passed else "mask" if t == "SECRET" or cfg.pii else "off: personal data is off")
+             for t in TYPES}
+    if as_json:
+        typer.echo(json.dumps({"pii": cfg.pii, "types": state}))
+        return
+    for t in TYPES:
+        typer.echo(f"{t:8} {state[t]}", err=True)
+    if not cfg.pii and any(t in personal for t in wanted):
+        typer.echo("Personal data is off ([detect] pii = false), so personal types are not masked anyway.", err=True)
+
+
+rules_app = typer.Typer(help="Your own rules: patterns always masked, and exceptions never masked.", no_args_is_help=True)
+app.add_typer(rules_app, name="rules")
+
+
+def _rules_json(cfg) -> dict:
+    return {"mask": cfg.mask_rules, "allow_strings": cfg.allow_strings, "allow_patterns": cfg.allow_patterns}
+
+
+@rules_app.command("list")
+def rules_list(as_json: bool = typer.Option(False, "--json", help="Print JSON.")) -> None:
+    """Show your rules."""
+    import json
+
+    cfg = _config()
+    if as_json:
+        typer.echo(json.dumps(_rules_json(cfg)))
+        return
+    for i, r in enumerate(cfg.mask_rules):
+        typer.echo(f"mask  {i}  {r['name']}  {r['type']}  /{r['pattern']}/", err=True)
+    for i, v in enumerate(cfg.allow_strings):
+        typer.echo(f"allow {i}  {v!r}", err=True)
+    for i, v in enumerate(cfg.allow_patterns):
+        typer.echo(f"allow-pattern {i}  /{v}/", err=True)
+
+
+def _save_rules(cfg, section: str, key: str, value) -> None:
+    from .config import ConfigError, set_value
+
+    try:
+        set_value(section, key, value, cfg.path)
+    except (ConfigError, OSError) as e:
+        typer.echo(f"sotto rules: {e}", err=True)
+        raise typer.Exit(1)
+    typer.echo("saved; running proxies apply it on their next request", err=True)
+
+
+@rules_app.command("mask")
+def rules_mask(
+    pattern: str = typer.Argument(..., help="A Python regular expression; group 1 is masked if it has a group."),
+    name: str = typer.Option(None, help="A name shown in the dashboard."),
+    kind: str = typer.Option("SECRET", "--type", help="The type its matches are masked as."),
+) -> None:
+    """Always mask what PATTERN matches."""
+    import re
+
+    from .detect import TYPES
+
+    cfg = _config()
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        typer.echo(f"sotto rules: bad pattern: {e}", err=True)
+        raise typer.Exit(2)
+    if kind.upper() not in TYPES:
+        typer.echo(f"sotto rules: --type must be one of {', '.join(TYPES)}", err=True)
+        raise typer.Exit(2)
+    rule = {"name": name or f"rule {len(cfg.mask_rules) + 1}", "pattern": pattern, "type": kind.upper()}
+    _save_rules(cfg, "rules", "mask", [*cfg.mask_rules, rule])
+
+
+@rules_app.command("allow")
+def rules_allow(
+    value: str = typer.Argument(..., help="Exact text that is never masked."),
+    pattern: bool = typer.Option(False, "--pattern", help="VALUE is a regular expression matching the whole value."),
+) -> None:
+    """Never mask VALUE (an exception)."""
+    import re
+
+    cfg = _config()
+    if pattern:
+        try:
+            re.compile(value)
+        except re.error as e:
+            typer.echo(f"sotto rules: bad pattern: {e}", err=True)
+            raise typer.Exit(2)
+        _save_rules(cfg, "allowlist", "patterns", [*cfg.allow_patterns, value])
+    else:
+        _save_rules(cfg, "allowlist", "strings", [*cfg.allow_strings, value])
+
+
+@rules_app.command("remove")
+def rules_remove(
+    kind: str = typer.Argument(..., help="mask, allow or allow-pattern"),
+    index: int = typer.Argument(..., help="The number `sotto rules list` shows."),
+) -> None:
+    """Remove one of your rules."""
+    cfg = _config()
+    table = {"mask": ("rules", "mask", cfg.mask_rules), "allow": ("allowlist", "strings", cfg.allow_strings),
+             "allow-pattern": ("allowlist", "patterns", cfg.allow_patterns)}
+    if kind not in table or not 0 <= index < len(table[kind][2]):
+        typer.echo("sotto rules: no such rule; see `sotto rules list`", err=True)
+        raise typer.Exit(2)
+    section, key, items = table[kind]
+    _save_rules(cfg, section, key, [x for i, x in enumerate(items) if i != index])
 
 
 @app.command()
@@ -344,7 +482,7 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
     binary, model = find_binary(), find_model()
     out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
            "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None,
-           "observe": cfg.observe, "clients": clients,
+           "observe": cfg.observe, "clients": clients, "pii": cfg.pii, "pass": cfg.pass_types, "rules": _rules_json(cfg),
            "excluded": excluded_projects()}
     typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 

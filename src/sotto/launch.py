@@ -26,7 +26,7 @@ BYPASS_KEYS = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE
 
 def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, upstream: str | None = None,
                 mode: str = "serve") -> Proxy:
-    from .config import CONFIG_FILE, ObserveFlag
+    from .config import LiveConfig
     from .detect.pipeline import default_pipeline
     from .redact import Redactor
     from .stats import stats_token
@@ -39,12 +39,15 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
     pii = cfg.pii if pii is None else pii
     if upstream and is_sotto_url(upstream, cfg.port):
         upstream = None  # protection points Claude Code at sotto: never forward to ourselves
-    pipeline = default_pipeline(pii=pii, rules_only=rules_only,
-                                allow_strings=cfg.allow_strings, allow_patterns=cfg.allow_patterns)
+    pipeline = default_pipeline(pii=pii, rules_only=rules_only, allow_strings=cfg.allow_strings,
+                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
     info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__, "apis": ["messages", "responses"]}
     from .stats import History, Stats
 
-    observe = ObserveFlag(cfg.path or CONFIG_FILE, cfg.observe)
+    def apply(new) -> None:  # the config file changed: detection settings apply on the next request
+        pipeline.apply_settings(new.pass_types, new.mask_rules, new.allow_strings, new.allow_patterns)
+
+    observe = LiveConfig(cfg.path, cfg, on_change=apply)
     history = History(Path.home() / ".config" / "sotto" / "history.jsonl")
     return Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
                  stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe)
