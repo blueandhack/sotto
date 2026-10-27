@@ -17,6 +17,9 @@ def homes(tmp_path, monkeypatch):
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "pi"))
     (tmp_path / "codex").mkdir()
     (tmp_path / "pi").mkdir()
+    # Whether codex or pi is on this machine's PATH must not matter: a tool counts as installed
+    # here only through the config files each test writes.
+    monkeypatch.setattr(clients.shutil, "which", lambda name: None)
     return tmp_path
 
 
@@ -71,6 +74,7 @@ def test_pi_on_off_and_the_users_own_proxy(homes):
 def test_protect_reports_each_client(homes, monkeypatch, tmp_path):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     (homes / "codex" / "config.toml").write_text("not = [valid")
+    (homes / "pi" / "models.json").write_text("{}")
     out = clients.protect_clients("on", PORT)
     assert out["claude"]["on"] and out["pi"]["on"]
     assert "not valid TOML" in out["codex"]["error"]  # one broken config never stops the others
@@ -97,3 +101,9 @@ def test_sotto_codex_runs_codex_through_the_proxy(tmp_path, monkeypatch):
     assert r.exit_code == 0 and args[-2:] == ["exec", "hi"]
     assert 'model_provider="sotto"' in args and 'model_providers.sotto.supports_websockets=false' in args
     assert 'model_providers.sotto.base_url="http://127.0.0.1:7788/chatgpt/backend-api/codex"' in args
+
+
+def test_a_tool_that_is_not_installed_is_skipped(homes):
+    out = clients.protect_clients("on", PORT, ["codex", "pi"])
+    assert out == {"codex": {"installed": False, "on": False}, "pi": {"installed": False, "on": False}}
+    assert not (homes / "codex" / "config.toml").exists() and not (homes / "pi" / "models.json").exists()
