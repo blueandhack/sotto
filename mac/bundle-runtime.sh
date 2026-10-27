@@ -25,7 +25,7 @@ rm -rf "$work" "$RES/python" "$RES/bin" && mkdir -p "$work" "$RES/bin" "$APP/Con
 uv python install --no-bin "$PYTHON_VERSION" >/dev/null
 src_py=$(uv python find --managed-python --no-project "$PYTHON_VERSION")
 prefix=$("$src_py" -I -c 'import sys; print(sys.base_prefix)')
-case $prefix in */uv/python/cpython-"$PYTHON_VERSION"-*) ;; *) echo "unexpected Python prefix: $prefix" >&2; exit 1 ;; esac
+case $prefix in */cpython-"$PYTHON_VERSION"-macos-aarch64-*) ;; *) echo "unexpected Python prefix: $prefix" >&2; exit 1 ;; esac
 ditto "$prefix" "$RES/python"
 py=$RES/python/bin/python3
 stdlib=$("$py" -I -c 'import sysconfig; print(sysconfig.get_paths()["stdlib"])')
