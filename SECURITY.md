@@ -10,7 +10,8 @@ Useful reports include:
 
 - A request shape that reaches the upstream with a real value in it (a leak).
 - A way to make sotto forward a request it should have blocked (fail-open).
-- A way to make sotto write a value to disk, a log, or the stats feed.
+- A way to make sotto write a value to disk, a log, the history file, or the stats feeds.
+- A way to get a request out unscanned through a route sotto should block: an unscanned endpoint, an encoding it cannot read, a WebSocket.
 - A way for a model reply to send a restored value to a network tool.
 
 Please use synthetic secrets in your report, never real ones. A minimal payload plus the `sotto` version and `sotto doctor` output is ideal.
@@ -21,7 +22,8 @@ These are known limits, documented in the README:
 
 - Detection misses on secret formats with no rule and no context the local model recognizes. Please still report them as regular issues; they become new rules.
 - Images and PDFs, which pass through unscanned.
-- Real values in Claude Code's local transcripts, and in shell commands Claude runs on your Mac.
+- Real values in your agent's local transcripts, and in shell commands it runs on your Mac.
+- What you chose to let through: observe mode, types you set to pass, exceptions you added, and excluded projects.
 
 ## Supported versions
 

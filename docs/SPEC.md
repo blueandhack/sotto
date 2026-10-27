@@ -1,10 +1,10 @@
-# sotto — Local Secret & PII Redaction for Claude Code (Build Spec)
+# sotto — Local Secret & PII Redaction for Coding Agents (Build Spec)
 
-Oct 25, 2026 · @Yujia Lin
+Oct 25, 2026 · @Yujia Lin · updated Oct 27, 2026 for Codex and pi, pf-serve, and the Mac app
 
 ## Summary
 
-sotto is a local proxy that removes secrets and personal data from Claude Code requests before they leave the Mac, then restores the real values locally. Nothing is sent to any third party: detection runs fully on-device. The name comes from *sotto voce*, "in a low voice."
+sotto is a local proxy that removes secrets and personal data from coding-agent requests (Claude Code, Codex, pi) before they leave the Mac, then restores the real values locally. Nothing is sent to any third party: detection runs fully on-device. The name comes from *sotto voce*, "in a low voice."
 
 Build order: **Phase 0 is a benchmark** that measures which detectors are fast and accurate enough. The real proxy is built only after those numbers are in.
 
@@ -21,7 +21,7 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 
 **Goals**
 
-1. No raw secret (API key, token, password, private key, connection string) reaches api.anthropic.com.
+1. No raw secret (API key, token, password, private key, connection string) reaches the model provider (api.anthropic.com, api.openai.com, chatgpt.com).
 2. Personal data (names, emails, phones, addresses, account numbers) is redacted when enabled.
 3. Claude can still edit files that contain secrets: placeholders are restored before tools run locally.
 4. Fail closed: if sotto is down or a detector errors, the request is blocked, never sent raw.
@@ -29,7 +29,7 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 
 **Non-goals (v1)**
 
-- Other AI clients (Codex, Cursor, Gemini CLI). The design should not block them later.
+- ~~Other AI clients (Codex, Cursor, Gemini CLI).~~ Codex and pi were added on Oct 27, 2026 (Milestones). Cursor and Gemini CLI remain out of scope.
 - Linux, Windows, or Intel Macs.
 - Compliance certification. sotto is a safety layer, not an anonymization guarantee.
 - Rewriting Claude Code's local transcript files.
@@ -38,16 +38,16 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 
 | Constraint | Value |
 | --- | --- |
-| OS | macOS 27 or later (ships the `fm` command and the 8,192-token on-device model) |
+| OS | macOS 14 or later (the original floor, macOS 27, came from the Apple model, which was dropped) |
 | Hardware | Apple silicon; reference machine is an M4 with 48 GB |
-| Network | Detection fully offline; the only outbound connection is the forwarded request to api.anthropic.com |
+| Network | Detection fully offline; the only outbound connections are the forwarded request to the provider and `sotto setup`'s one model download |
 | Language | Python 3.12+, managed with `uv`; the model runs in pf-serve, a native program (C++ on ggml) |
-| Distribution | Homebrew tap later; `uv tool install` during development |
+| Distribution | Sotto.app (self-contained, notarized DMG) and `uv tool install`; a Homebrew cask later |
 | Name | `sotto` — check GitHub, PyPI and Homebrew before first publish; fall back to `sotto-redact` if taken |
 
 ## Architecture
 
-sotto is a local HTTP proxy: Claude Code talks to it through `ANTHROPIC_BASE_URL`, and it is the only thing that talks to Anthropic.
+sotto is a local HTTP proxy: each coding agent talks to it through its base-URL setting (Claude Code's `ANTHROPIC_BASE_URL`, a `sotto` model provider in Codex, pi's `models.json`), and it is the only thing that talks to the providers. It routes by path: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT under `/chatgpt/`.
 
 &#91;embedded content: sotto architecture · request and response paths\]
 
@@ -170,17 +170,23 @@ Each record: `{"id", "text", "spans": [{"start", "end", "type"}], "tags": [...]}
 
 ## CLI, config, layout, milestones
 
-The whole user experience is one command: `sotto claude`. Everything else exists for setup, debugging and CI.
+The user experience is one command, `sotto claude` or `sotto codex`, or the Mac app with protection switched on. Everything else exists for setup, settings, debugging and CI.
 
 **Commands**
 
 | Command | What it does |
 | --- | --- |
 | `sotto claude [args]` | Starts the proxy on a free local port, runs `claude` with `ANTHROPIC_BASE_URL` pointing at it, stops the proxy when Claude exits. Passes all args through. |
+| `sotto codex [args]` | The same for Codex, with `-c` overrides for that run (a `sotto` provider, WebSockets off). |
 | `sotto serve` | Runs the proxy standalone on `127.0.0.1:7788` (configurable). Binds to localhost only. |
+| `sotto protect on\|off\|status [--client]` | Points Claude Code, Codex and pi at `sotto serve` in their own config files, or undoes it. |
+| `sotto observe on\|off` | Observe only: scan and count, but forward requests unchanged. |
+| `sotto types` / `sotto rules` | What gets masked: types passed through, your own mask rules, exceptions. |
+| `sotto exclude` / `sotto include` | Lets one project's Claude Code skip sotto. |
+| `sotto status` | Setup, protection and settings as JSON, for the Mac app. |
 | `sotto scan <file or ->` | Prints findings with values masked; exits 1 if anything is found. Usable as a pre-commit hook. |
 | `sotto setup` | Downloads the Privacy Filter model once and checks its pinned SHA-256. |
-| `sotto doctor` | Checks macOS version, Apple silicon, pf-serve and the model (with a canary), the Keychain, routes around the proxy, port free. |
+| `sotto doctor` | Checks macOS version, Apple silicon, pf-serve and the model (with a canary), the install salt, protection, routes around the proxy, port free. |
 | `sotto selftest` | Sends a synthetic canary secret through the proxy to a local mock upstream and fails unless it arrives redacted. |
 
 **Config** (`~/.config/sotto/config.toml`, all optional; unknown keys and bad values are errors)
@@ -192,6 +198,11 @@ upstream = "https://api.anthropic.com"
 
 [detect]
 pii = false          # also mask personal data (L1 rules and L2 secrets are always on)
+observe = false      # count only; requests go out unmasked
+pass = []            # types never masked, e.g. ["PERSON"]
+
+[rules]              # the user's own patterns, always masked
+mask = []            # [{ name, pattern, type }]
 
 [allowlist]          # added to the built-in allowlist, never replacing it
 strings = []
@@ -220,20 +231,25 @@ sotto/
   pyproject.toml
   src/sotto/
     cli.py          # Typer entry point
-    proxy.py        # Starlette app, request/response rewrite, SSE handling
-    redact.py       # walk Messages API payloads, apply spans, placeholders
-    restore.py      # vault lookup, streaming tail buffer, JSON escaping
+    proxy.py        # Starlette app: routing by provider, rewrite, SSE, fail-closed
+    redact.py       # walk Messages and Responses API payloads, apply spans, placeholders
+    restore.py      # vault lookup, Messages API streaming restore
+    responses.py    # Responses API restore, whole and streamed
     vault.py        # in-memory map, HMAC ids, install salt
+    stats.py        # counts-only stats feed, history file, flow totals
+    protect.py      # Claude Code settings, project exclusions
+    clients.py      # Codex and pi configs, `sotto codex`
+    launch.py       # `sotto claude`, the VS Code wrapper, background server
     detect/
-      rules.py      # L1 regex + entropy + checksums
+      rules.py      # L1 regex + entropy + checksums, user rules
       rules.toml    # default rule set
-      pf.py         # L2 OpenAI Privacy Filter
-      afm.py        # Apple on-device model (benchmark only)
+      pfserve.py    # L2 OpenAI Privacy Filter through pf-serve
       merge.py      # span union and priority
-      pipeline.py   # layers, plus refinement of model spans
+      pipeline.py   # layers, refinement of model spans, types passed through
     config.py
-  bench/
-    gen.py  data/  results/
+  native/pf-serve/  # pinned build of the model runtime
+  mac/              # the SwiftUI app, bundling and release scripts
+  bench/            # run.py, gen.py, candidate detectors, data/, results/
   tests/
 ```
 
@@ -245,7 +261,7 @@ sotto/
 - [x] **M3 Streaming restore.** SSE tail buffer and tool-input buffering. Done when placeholders split at every possible byte offset are restored correctly (property test).
 - [x] **M4 `sotto claude`.** Wrapper, config file, restore policy, `sotto doctor`. Done when a real Claude Code session edits a file containing a fake secret and the file ends up with the real value. *Passed Oct 25, 2026 (Claude Code 2.1.273): the file ended with the real value, and a recording relay between sotto and Anthropic saw 0 copies of either fake secret. Claude Code only called `HEAD /api/hello` and `POST /v1/messages`.*
 - [ ] **M4.5 Secret classifier — on hold (Oct 25, 2026).** A small encoder that labels candidate spans as credential, identifier, placeholder or personal data, replacing hand-written refinement as the main filter for false positives. The trigger is fresh held-out set 2: 9 of 15 hard negatives were flagged, each a new identifier shape. Candidate data: Samsung CredData (Apache-2.0) plus synthetic positives and harvested public identifiers. Never train on the hand-written negative sets.
-- [ ] **M5 Mac app.** A SwiftUI menu-bar app with a dashboard window and Swift Charts. It shows a live flow diagram (Claude Code → sotto → Anthropic) with counts, redactions over time by type, restores, fail-closed blocks, detection latency and model health, plus start/stop and a PII toggle. It reads M2's stats feed over a local socket guarded by a 0600 token file. It never receives a sensitive value, sends no telemetry and checks for no updates. Signed with Developer ID and notarized; ships as a Homebrew cask.
+- [x] **M5 Mac app.** *Done Oct 27, 2026: a menu-bar app and dashboard that bundles the engine, runs it as a LaunchAgent and sets itself up; flow diagrams per agent and provider, Detection with per-type switches and user rules, a persistent request history, observe mode. Signing and the Homebrew cask moved to M6.* Original plan: a SwiftUI menu-bar app with a dashboard window and Swift Charts. It shows a live flow diagram (Claude Code → sotto → Anthropic) with counts, redactions over time by type, restores, fail-closed blocks, detection latency and model health, plus start/stop and a PII toggle. It reads M2's stats feed over a local socket guarded by a 0600 token file. It never receives a sensitive value, sends no telemetry and checks for no updates. Signed with Developer ID and notarized; ships as a Homebrew cask.
 - [x] **Codex and pi (Oct 27, 2026).** The proxy routes by path prefix: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT (Codex's subscription backend) under `/chatgpt/`. The Responses API is scanned like the Messages API: `instructions`, message text, `function_call` arguments (values, not keys) and tool outputs; reasoning items pass through. Replies are restored whole and as streams (`response.output_text.delta` tail buffer, tool-call arguments held until `.done`). zstd and gzip request bodies are decoded; other encodings and WebSocket upgrades are refused. Verified with Codex 0.147 against chatgpt.com: the request carried placeholders only and the shell command ran with the real value. `sotto codex` for one run, `sotto protect` for Codex's config.toml and pi's models.json; clients are named by an `x-sotto-client` header the proxy strips.
 - [ ] **M6 Ship.** README, Homebrew tap, name check on GitHub, PyPI and Homebrew. *Oct 26, 2026: Sotto.app is self-contained (bundled Python runtime, pf-serve, a LaunchAgent via SMAppService) and sets itself up: model download, background service, `sotto protect`. Left: Developer ID signing and notarization, a DMG, a Homebrew cask, updates, and Windows (pf-serve already builds there; the app would need its own UI).*
 
@@ -266,7 +282,7 @@ The one test that must never fail: a canary secret sent through sotto never appe
 - Logs contain only type, placeholder and counts. Never values, request bodies or auth headers.
 - Bind to `127.0.0.1` only. Reject requests with a non-local `Host` header.
 - Third-party loggers (httpx, httpcore, uvicorn) are capped at WARNING so they cannot print URLs or request details; uvicorn's access log is off.
-- **Stats feed** (`GET /_sotto/stats`, for the Mac app): request counts by outcome, masked and restored counts by type, scan latency, and the last 200 events (time, path, status, counts). It never holds a value or a placeholder. It requires `Authorization: Bearer <token>`, with the token in `~/.config/sotto/stats-token` (mode 0600).
+- **Stats feeds** (for the Mac app): `GET /_sotto/stats` has request counts by outcome, masked and restored counts by type, the detection report, scan latency, and the last 200 events (time, path, status, client, provider, counts); `/_sotto/history` pages the history file and `/_sotto/flows` totals it for the flow diagrams. None holds a value or a placeholder. It requires `Authorization: Bearer <token>`, with the token in `~/.config/sotto/stats-token` (mode 0600).
 - No telemetry, no update checks, no network calls except the forwarded request.
 - Synthetic secrets only in the repo. Add `sotto scan` as a pre-commit hook on the sotto repo itself.
 
@@ -278,6 +294,8 @@ The one test that must never fail: a canary secret sent through sotto never appe
 | Over-redaction breaks Claude's work | Allowlist; hard-negative tests; restore in edits so files stay correct |
 | Prompt injection asks Claude to send a placeholder somewhere, and restore leaks it | Per-tool restore policy; network tools keep placeholders |
 | Secrets inside images or PDFs | Out of scope for v1; documented in README |
+| A client opens a WebSocket sotto cannot scan | Refused; Codex falls back to HTTPS, and `sotto protect` turns Codex's WebSockets off |
+| A user lets a type through, or excludes a project | Explicit and visible: secrets need confirmation, the dashboard marks passed types and lists exclusions |
 | Local transcript files keep real values | Out of scope for v1; documented in README |
 | Refinement drops a real value | Each refinement rule is tested and measured on held-out data for recall loss (none so far); refinement never touches L1 rule hits |
 | Claude Code changes its request format | Walk payloads generically by block type; selftest in CI |
@@ -286,5 +304,5 @@ The one test that must never fail: a canary secret sent through sotto never appe
 
 - Should Bash tool inputs get restored values? Restoring lets commands like `curl -H "Authorization: ..."` work, but it is also the easiest exfiltration path.
 - ~~Should `pii` default to on?~~ No (Phase 0): with PII on, 17–27% of hard negatives are flagged, and ACCOUNT, URL and DATE precision is 0.13–0.36.
-- With the Apple model dropped, nothing in v1 needs macOS 27 (pf-serve is built for macOS 14+). Should the OS floor come down?
-- Is a Swift binary worth it later for distribution, or does Python plus Homebrew stay simple enough?
+- ~~Should the OS floor come down?~~ Yes: macOS 14, now that the Apple model is gone.
+- ~~Is a Swift binary worth it?~~ Not now: the app bundles Python (about 95 MB) and pf-serve, which also builds for Windows and Linux.

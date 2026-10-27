@@ -4,9 +4,9 @@
 
 <p align="center"><b>Keep secrets and personal data on your Mac while you use Claude Code, Codex or pi.</b></p>
 
-sotto is a local proxy that sits between your coding agent (Claude Code, Codex or pi) and its model provider (Anthropic or OpenAI). Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When Claude answers, sotto puts the real values back, so Claude can still edit your `.env` file correctly, but Anthropic never sees what is in it.
+sotto is a local proxy that sits between your coding agent (Claude Code, Codex or pi) and its model provider (Anthropic or OpenAI). Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When the model answers, sotto puts the real values back, so your agent can still edit your `.env` file correctly, but the provider never sees what is in it.
 
-Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned request to Anthropic. The name comes from *sotto voce*, "in a low voice".
+Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned request to the provider. The name comes from *sotto voce*, "in a low voice".
 
 > **Status: pre-release.** sotto works end to end, but it has not been audited. Treat it as a safety layer, not a guarantee. See [Limitations](#limitations).
 
@@ -15,31 +15,32 @@ Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned
 ## How it works
 
 ```
-Claude Code ──▶ sotto (on your Mac) ──▶ Anthropic API
-   real values    detect → mask           placeholders only
-              ◀── restore ◀──────────────
+Claude Code ─┐                            ┌──▶ Anthropic API
+Codex       ├─▶ sotto (on your Mac) ───┤
+pi          ─┘   detect → mask            └──▶ OpenAI API
+  real values  ◀── restore ◀───────────────── placeholders only
 ```
 
 1. **Detect.** Two layers, cheapest first:
    - 27 gitleaks-style rules, plus entropy and checksum checks, for structured secrets.
    - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), an open-weight token classifier, for secrets in context and, optionally, personal data. It runs in pf-serve, a small native program on [privacy-filter.cpp](https://github.com/localai-org/privacy-filter.cpp) that uses the Mac's GPU through Metal.
    - A deterministic refinement step then drops what the model gets wrong: UUIDs, hashes, request IDs, timestamps, paths, placeholders and documented example keys.
-2. **Mask.** Each value becomes a placeholder derived from a secret per-install key (HMAC-SHA256). The same value always gets the same placeholder, so Anthropic's prompt cache keeps working. Values live only in memory and are cleared when sotto exits.
-3. **Restore.** Placeholders in Claude's answers are swapped back on your Mac, including in streamed text and in tool inputs (file edits, shell commands). Network tools such as WebFetch, WebSearch and MCP tools keep placeholders, so a prompt-injected request cannot send a real value to the internet.
-4. **Fail closed.** If scanning fails, the body is malformed, or a request targets an endpoint sotto does not scan, the request is blocked and never sent raw.
+2. **Mask.** Each value becomes a placeholder derived from a secret per-install key (HMAC-SHA256). The same value always gets the same placeholder, so the provider's prompt cache keeps working. You choose what is masked: turn off a type (names, dates…), add your own patterns, and list exceptions. Values live only in memory and are cleared when sotto exits.
+3. **Restore.** Placeholders in the model's answers are swapped back on your Mac, including in streamed text and in tool inputs (file edits, shell commands). Network tools such as WebFetch, WebSearch and MCP tools keep placeholders, so a prompt-injected request cannot send a real value to the internet.
+4. **Fail closed.** If scanning fails, the body is malformed or compressed in a way sotto cannot read, a request targets an endpoint sotto does not scan, or a client opens a WebSocket, the request is blocked and never sent raw.
 
 ## Requirements
 
 - A Mac with Apple silicon, and macOS 14 or later
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), and Xcode or its command line tools (to build pf-serve)
-- Claude Code
+- Claude Code, Codex or pi
 - About 1.7 GB of free memory while sotto runs (the local model), and 1.6 GB of disk for it
 
 ## Install
 
 ### The Mac app (everything included)
 
-Download `Sotto-<version>.dmg` from the [Releases](https://github.com/blueandhack/sotto/releases) page (or build it: [mac/README.md](mac/README.md)), drag Sotto into Applications, open it, and follow **Settings › Setup**: download the model, start the background service, and switch on **Protect Claude Code**. The app bundles sotto, its Python runtime and pf-serve; nothing else needs installing. Every Claude Code session then goes through sotto: terminal, VS Code and the desktop app.
+Download `Sotto-<version>.dmg` from the [Releases](https://github.com/blueandhack/sotto/releases) page (or build it: [mac/README.md](mac/README.md)), drag Sotto into Applications, open it, and follow **Settings › Setup**: download the model, start the background service, and switch on protection for each coding agent you use (Claude Code, Codex, pi). The app bundles sotto, its Python runtime and pf-serve; nothing else needs installing. Every session of a protected agent then goes through sotto; for Claude Code that is the terminal, VS Code and the desktop app.
 
 ### The command line
 
@@ -90,7 +91,7 @@ sotto protect on      # Claude Code, Codex and pi now send every session to it; 
 
 Each file is backed up next to itself first, and `off` removes only what `on` added. A tool you have already pointed at another gateway is left alone and reported. Claude Code sessions switch at once; Codex and pi pick the change up when they next start.
 
-While protection is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
+While protection is on, `sotto serve` must keep running, or the protected agents cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
 ### Observe only
 
@@ -99,7 +100,7 @@ sotto observe on       # scan and count, but send every request unmasked
 sotto observe off      # mask again
 ```
 
-Observe mode shows what sotto would catch without changing anything: requests go to Anthropic exactly as Claude Code sent them, nothing is blocked, and the dashboard says so on every page. Running proxies switch on their next request; if the config file becomes invalid, they mask.
+Observe mode shows what sotto would catch without changing anything: requests go to the provider exactly as the agent sent them, nothing is blocked, and the dashboard says so on every page. Running proxies switch on their next request; if the config file becomes invalid, they mask.
 
 ### Choose what gets masked
 
@@ -174,7 +175,7 @@ sotto makes no network calls except the request it forwards, and `sotto setup`'s
 
 ## Mac app
 
-A menu-bar app that sets sotto up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per client, request and detection funnels, masked values by type, scan latency, and recent activity, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
+A menu-bar app that sets sotto up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per coding agent and provider, with hover highlighting; what was found and masked per type, with switches for what gets masked and an editor for your own rules; scan latency; and every request in a searchable history, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
 
 ## Accuracy and speed
 
@@ -191,19 +192,20 @@ No language model judges spans at request time. The Apple on-device model and Qw
 
 ## Limitations
 
-- **False positives on unusual identifiers.** On two fresh sets of hard negatives, 9 of 15 and 3 of 15 were flagged (memory addresses, Azure resource IDs, Stripe object IDs, Kubernetes pod hashes, AWS VPC and security group IDs, Xcode build folders, and IDs right after the word "key", such as idempotency keys). Over-masking costs Claude some context but never leaks. A small trained classifier is planned for this.
+- **False positives on unusual identifiers.** On two fresh sets of hard negatives, 9 of 15 and 3 of 15 were flagged (memory addresses, Azure resource IDs, Stripe object IDs, Kubernetes pod hashes, AWS VPC and security group IDs, Xcode build folders, and IDs right after the word "key", such as idempotency keys). Over-masking costs the model some context but never leaks. A small trained classifier is planned for this.
 - **Images and PDFs pass through unscanned.**
-- **Local transcripts keep real values.** Claude Code's history on your disk is restored, so it holds real values. sotto protects what leaves your Mac, not what is stored on it.
-- **Shell commands receive real values.** Claude can still run a command that sends a restored secret somewhere. Use it together with [Claude Code's sandbox](https://code.claude.com/docs/en/sandboxing), whose network allowlist stops that. sotto controls what Anthropic sees; the sandbox controls what commands can do.
+- **Local transcripts keep real values.** Your agent's history on your disk is restored, so it holds real values. sotto protects what leaves your Mac, not what is stored on it.
+- **Shell commands receive real values.** An agent can still run a command that sends a restored secret somewhere. Use it together with a sandbox such as [Claude Code's](https://code.claude.com/docs/en/sandboxing), whose network allowlist stops that. sotto controls what the provider sees; the sandbox controls what commands can do.
 - **English-first.** The local model is strongest on English text.
 - **macOS on Apple silicon only.**
+- **Remote Control.** Claude Code turns Remote Control off while its requests go through a proxy, and Remote Control would send the restored transcript to Anthropic around sotto anyway. Use an unprotected session when you need it.
 - **Codex and pi: the Responses and Messages APIs only.** Codex's WebSocket transport is refused (it falls back to HTTPS), and pi providers other than Anthropic and OpenAI (Google, OpenRouter, local models) are not routed through sotto. Chat Completions requests are blocked, not sent unscanned.
 
 ## Development
 
 ```sh
 uv sync
-uv run pytest                                # unit, property, proxy, streaming and launcher tests
+uv run pytest                                # detection, proxy (Messages and Responses APIs), streams, settings, clients
 uv run python bench/gen.py                   # generate the benchmark datasets
 uv run python bench/run.py                   # accuracy and speed; see bench/README.md
 ```
