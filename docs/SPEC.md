@@ -84,7 +84,7 @@ Every sensitive value becomes a deterministic placeholder, so the same secret al
 - `SOTTO_<TYPE>_<id>`, for example `SOTTO_SECRET_7f3a9c2e` or `SOTTO_EMAIL_01b44d90`. It looks like an identifier, so Claude copies it verbatim instead of "fixing" it.
 - `<id>` = first 8 hex chars of HMAC-SHA256(install salt, type + value). On a collision, extend to 12 chars.
 - Types: `SECRET`, `PERSON`, `EMAIL`, `PHONE`, `ADDRESS`, `ACCOUNT`, `URL`, `DATE`.
-- The install salt is generated once and stored in the macOS Keychain (fallback: `~/.config/sotto/salt`, mode 0600).
+- The install salt is generated once and stored in `~/.config/sotto/salt` (mode 0600). It was kept in the macOS Keychain until Oct 26, 2026, but a Keychain item is readable without a prompt only by the program that created it, so the app, the CLI and the VS Code wrapper ended up with different salts, and a placeholder made by one could not be restored by another. A Keychain-only salt is copied to the file once.
 
 **Vault**
 
@@ -223,7 +223,7 @@ sotto/
     proxy.py        # Starlette app, request/response rewrite, SSE handling
     redact.py       # walk Messages API payloads, apply spans, placeholders
     restore.py      # vault lookup, streaming tail buffer, JSON escaping
-    vault.py        # in-memory map, HMAC ids, Keychain salt
+    vault.py        # in-memory map, HMAC ids, install salt
     detect/
       rules.py      # L1 regex + entropy + checksums
       rules.toml    # default rule set

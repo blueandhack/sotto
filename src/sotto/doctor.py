@@ -57,20 +57,13 @@ def run() -> int:
             if pf:
                 pf.close()
 
-    try:
-        import keyring
+    from .vault import SALT_FILE
 
-        from .vault import KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, SALT_FILE, _keychain_usable
-
-        if _keychain_usable() and keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT):
-            _check(r, OK, "install salt in the Keychain")
-        elif SALT_FILE.exists():
-            mode = SALT_FILE.stat().st_mode & 0o777
-            _check(r, OK if mode == 0o600 else FAIL, f"install salt in {SALT_FILE} (mode {mode:o})")
-        else:
-            _check(r, OK, "install salt not created yet (created on first run)")
-    except Exception as e:
-        _check(r, WARN, f"Keychain not readable ({type(e).__name__}); sotto falls back to a 0600 file")
+    if SALT_FILE.exists():
+        mode = SALT_FILE.stat().st_mode & 0o777
+        _check(r, OK if mode == 0o600 else FAIL, f"install salt in {SALT_FILE} (mode {mode:o})")
+    else:
+        _check(r, OK, "install salt not created yet (created on first run)")
 
     for f in (Path.home() / ".config" / "sotto" / "stats-token", launch.LOG_FILE, launch.RUNTIME_FILE):
         if f.exists() and f.stat().st_mode & 0o077:

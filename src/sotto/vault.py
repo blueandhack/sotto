@@ -5,7 +5,7 @@ HMAC-SHA256(install salt, type + NUL + value), extended to 12 on a collision. Th
 always gets the same placeholder, which keeps Anthropic's prompt cache valid across turns.
 
 The salt is secret: with it, anyone holding a placeholder could test guesses of a weak
-password offline. It lives in the macOS Keychain (fallback: ~/.config/sotto/salt, mode 0600).
+password offline. It lives in ~/.config/sotto/salt (mode 0600), shared by every sotto process.
 The vault lives in process memory only: never logged, never written to disk.
 """
 
@@ -30,12 +30,15 @@ MIN_KNOWN = 4
 PLACEHOLDER = re.compile(r"SOTTO_(" + "|".join(TYPES) + r")_([0-9a-f]{8}(?:[0-9a-f]{4})?)")
 
 
-def _salt_from_file(path: Path) -> bytes:
+def _salt_from_file(path: Path, initial: bytes | None = None) -> bytes:
     if path.exists():
         return bytes.fromhex(path.read_text().strip())
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    salt = secrets.token_bytes(32)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    salt = initial or secrets.token_bytes(32)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:  # another sotto created it first: use theirs
+        return bytes.fromhex(path.read_text().strip())
     with os.fdopen(fd, "w") as f:
         f.write(salt.hex())
     return salt
@@ -64,20 +67,26 @@ def _keychain_usable() -> bool:
 
 
 def install_salt() -> bytes:
-    """The per-install HMAC key: created once, then read from the Keychain (or the 0600 file)."""
-    if not _keychain_usable():
-        return _salt_from_file(SALT_FILE)
-    try:
-        import keyring
+    """The per-install HMAC key, in ~/.config/sotto/salt (0600), shared by every sotto on this Mac.
 
-        stored = keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
-        if stored:
-            return bytes.fromhex(stored)
-        salt = secrets.token_bytes(32)
-        keyring.set_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, salt.hex())
-        return salt
-    except Exception:
+    Every process must use the same salt: a placeholder made by one (the app's service, `sotto
+    claude`, the VS Code wrapper) is only restored by a process that derives the same one. The
+    Keychain cannot be shared silently, since an item is readable without a prompt only by the
+    program that created it, and each install of sotto is a different program. A salt that
+    earlier versions kept only in the Keychain is copied to the file once, when readable.
+    """
+    if SALT_FILE.exists():
         return _salt_from_file(SALT_FILE)
+    legacy = None
+    if _keychain_usable():
+        try:
+            import keyring
+
+            stored = keyring.get_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+            legacy = bytes.fromhex(stored) if stored else None
+        except Exception:
+            legacy = None
+    return _salt_from_file(SALT_FILE, legacy)
 
 
 class Vault:

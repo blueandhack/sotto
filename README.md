@@ -124,7 +124,7 @@ level = "info"         # logs contain types and counts, never values
 
 | What | Where |
 | --- | --- |
-| Per-install key for placeholders | macOS Keychain (`sotto` / `install-salt`); falls back to `~/.config/sotto/salt` (0600) |
+| Per-install key for placeholders | `~/.config/sotto/salt` (0600), shared by the app, the CLI and the VS Code wrapper |
 | Stats token for the Mac app | `~/.config/sotto/stats-token` (0600) |
 | Logs: paths, types, counts and timings, never values | `~/.config/sotto/sotto.log` (0600) |
 | Running proxy's port | `~/.config/sotto/runtime.json` (0600) |
