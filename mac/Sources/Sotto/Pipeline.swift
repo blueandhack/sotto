@@ -17,14 +17,32 @@ struct FlowBandsView: View {
     var flows: Flows
     var pulses: [Pulse]
     var live: Bool
+    /// The pointer, while it is over the diagram: what is under it is highlighted.
+    @State var hover: CGPoint?
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: !live || pulses.isEmpty)) { tl in
             Canvas { context, size in
-                FlowBands(flows: flows, size: size).draw(&context, now: tl.date, pulses: pulses)
+                FlowBands(flows: flows, size: size).draw(&context, now: tl.date, pulses: pulses, hover: hover)
+            }
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(let p): hover = p
+            case .ended: hover = nil
             }
         }
     }
+}
+
+/// What the pointer is over: a band, or a bar with every band through it.
+struct FlowFocus {
+    /// Highlighted links per diagram: 0 out, 1 back. Empty: nothing is highlighted.
+    var links: [Int: Set<Int>] = [:]
+    var nodes: [Int: Set<String>] = [:]
+    var label: String?
+    var at: CGPoint = .zero
+    var isEmpty: Bool { links.isEmpty && nodes.isEmpty }
 }
 
 // MARK: - Layout
@@ -230,7 +248,97 @@ private struct FlowBands {
 
     // MARK: Drawing
 
-    func draw(_ ctx: inout GraphicsContext, now: Date, pulses: [Pulse]) {
+    // MARK: Hover
+
+    /// Bars are thin, so they take hits a few points wide; bands take hits by their shape.
+    func focus(at p: CGPoint) -> FlowFocus {
+        let layouts = [out, back]
+        for (k, layout) in layouts.enumerated() {
+            for (id, n) in layout.nodes where n.rect.insetBy(dx: -6, dy: -2).contains(p) {
+                return nodeFocus(id, primary: k, at: p)
+            }
+        }
+        for (k, layout) in layouts.enumerated() {
+            // Last drawn is on top: test in reverse paint order.
+            for i in layout.links.indices.reversed() where layout.band(layout.links[i]).contains(p) {
+                let l = layout.links[i]
+                return FlowFocus(links: [k: [i]], nodes: [k: [l.from, l.to]],
+                                 label: "\(name(l.from)) → \(name(l.to)) · \(l.value.compact)", at: p)
+            }
+        }
+        return FlowFocus()
+    }
+
+    /// A bar: the bands into and out of it. A client or provider is lit in both diagrams, with
+    /// the bands its traffic takes through sotto (from the per-client totals).
+    private func nodeFocus(_ id: String, primary: Int, at p: CGPoint) -> FlowFocus {
+        var f = FlowFocus(at: p)
+        let route = id.hasPrefix("c:") || id.hasPrefix("p:")
+        let key = String(id.dropFirst(2))
+        for (k, layout) in [out, back].enumerated() where k == primary || route {
+            guard layout.nodes[id] != nil else { continue }
+            var nodes: Set<String> = [id]
+            if route { nodes.formUnion(k == 0 ? outRoute(id, key) : backRoute(id, key)) }
+            var links = Set<Int>()
+            for (i, l) in layout.links.enumerated() {
+                let touches = l.from == id || l.to == id
+                // Another client's or provider's own band never lights up with this one.
+                let foreign = route && [l.from, l.to].contains { $0 != id && ($0.hasPrefix("c:") || $0.hasPrefix("p:")) && !touches
+                    && (($0.hasPrefix("c:") && id.hasPrefix("c:")) || ($0.hasPrefix("p:") && id.hasPrefix("p:"))) }
+                if touches || (route && !foreign && nodes.contains(l.from) && nodes.contains(l.to)) {
+                    links.insert(i)
+                    nodes.formUnion([l.from, l.to])
+                }
+            }
+            f.links[k] = links
+            f.nodes[k] = nodes
+        }
+        let (n, unit) = totals(id)
+        f.label = "\(name(id)) · \(n.compact) \(unit)"
+        return f
+    }
+
+    /// Out: the client or provider, sotto, the results it has traffic in, and the far end.
+    private func outRoute(_ id: String, _ key: String) -> Set<String> {
+        let mine = flows.out.filter { $0.n > 0 && (id.hasPrefix("c:") ? $0.client == key : $0.provider == key) }
+        var nodes: Set<String> = ["sotto"]
+        for o in mine {
+            nodes.insert("r:" + o.kind)
+            nodes.insert("c:" + o.client)
+            if let p = o.provider { nodes.insert("p:" + p) }
+        }
+        return nodes
+    }
+
+    /// Back: the provider, restored or not, and the clients.
+    private func backRoute(_ id: String, _ key: String) -> Set<String> {
+        let mine = flows.back.filter { $0.n > 0 && (id.hasPrefix("c:") ? $0.client == key : $0.provider == key) }
+        var nodes = Set<String>()
+        for b in mine {
+            nodes.formUnion([b.restored ? "restored" : "plain", "c:" + b.client, "p:" + b.provider])
+        }
+        return nodes
+    }
+
+    private func totals(_ id: String) -> (Int, String) {
+        let key = String(id.dropFirst(2))
+        if id.hasPrefix("c:") { return (flows.clients.first { $0.id == key }?.sent ?? 0, "requests") }
+        if id.hasPrefix("p:") { return (flows.providers.first { $0.id == key }?.replies ?? 0, "requests") }
+        if id.hasPrefix("r:") { return (flows.out.filter { $0.kind == key }.reduce(0) { $0 + $1.n }, "requests") }
+        if id == "restored" { return (flows.back.filter(\.restored).reduce(0) { $0 + $1.n }, "replies") }
+        if id == "plain" { return (flows.back.filter { !$0.restored }.reduce(0) { $0 + $1.n }, "replies") }
+        return (flows.clients.reduce(0) { $0 + $1.sent }, "scanned")
+    }
+
+    private func name(_ id: String) -> String {
+        let key = String(id.dropFirst(2))
+        if id.hasPrefix("c:") { return flows.clients.first { $0.id == key }?.name ?? key }
+        if id.hasPrefix("p:") { return flows.providers.first { $0.id == key }?.name ?? key }
+        if id.hasPrefix("r:") { return key.prefix(1).uppercased() + key.dropFirst() }
+        return ["sotto": "sotto", "restored": "Real values put back", "plain": "Nothing to put back"][id] ?? id
+    }
+
+    func draw(_ ctx: inout GraphicsContext, now: Date, pulses: [Pulse], hover: CGPoint? = nil) {
         if flows.clients.isEmpty {
             ctx.draw(Text("No requests in this window yet").font(.system(size: 13)).foregroundStyle(Theme.secondary),
                      at: CGPoint(x: size.width / 2, y: size.height / 2))
@@ -246,13 +354,21 @@ private struct FlowBands {
         rule.addLine(to: CGPoint(x: size.width, y: backTop - 44))
         ctx.stroke(rule, with: .color(Theme.border), lineWidth: 1)
 
-        for layout in [out, back] {
-            for l in layout.links { ctx.fill(layout.band(l), with: .color(l.color.opacity(0.28))) }
-            for (_, n) in layout.nodes { ctx.fill(Path(roundedRect: n.rect, cornerRadius: 3), with: .color(n.color)) }
+        let focus = hover.map { self.focus(at: $0) } ?? FlowFocus()
+        for (k, layout) in [out, back].enumerated() {
+            for (i, l) in layout.links.enumerated() {
+                let lit = focus.links[k]?.contains(i) ?? false
+                ctx.fill(layout.band(l), with: .color(l.color.opacity(focus.isEmpty ? 0.28 : lit ? 0.55 : 0.08)))
+            }
+            for (id, n) in layout.nodes {
+                let lit = focus.isEmpty || (focus.nodes[k]?.contains(id) ?? false)
+                ctx.fill(Path(roundedRect: n.rect, cornerRadius: 3), with: .color(n.color.opacity(lit ? 1 : 0.3)))
+            }
         }
         headers(&ctx)
         labels(&ctx)
         drawPulses(&ctx, now: now, pulses: pulses)
+        if let label = focus.label { tooltip(&ctx, label, at: focus.at) }
     }
 
     private func headers(_ ctx: inout GraphicsContext) {
@@ -329,6 +445,18 @@ private struct FlowBands {
         place(restore, x: xs[1] + BandLayout.bar + 8, anchor: .leading)
         place(rightOut, x: xs[3] + BandLayout.bar + 8, anchor: .leading)
         place(rightBack, x: xs[3] + BandLayout.bar + 8, anchor: .leading)
+    }
+
+    private func tooltip(_ ctx: inout GraphicsContext, _ text: String, at p: CGPoint) {
+        let t = ctx.resolve(Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text))
+        let sz = t.measure(in: CGSize(width: 400, height: 40))
+        var box = CGRect(x: p.x + 14, y: p.y - sz.height - 18, width: sz.width + 20, height: sz.height + 12)
+        if box.maxX > size.width { box.origin.x = p.x - box.width - 14 }
+        if box.minY < 0 { box.origin.y = p.y + 16 }
+        let shape = Path(roundedRect: box, cornerRadius: 8)
+        ctx.fill(shape, with: .color(Theme.surface))
+        ctx.stroke(shape, with: .color(Theme.border), lineWidth: 1)
+        ctx.draw(t, at: CGPoint(x: box.midX, y: box.midY))
     }
 
     private func drawPulses(_ ctx: inout GraphicsContext, now: Date, pulses: [Pulse]) {
