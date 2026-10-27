@@ -28,6 +28,12 @@ def tool_policy(name: str, policy: dict[str, str]) -> str:
     return policy.get("default", "restore")
 
 
+# Key in the counts Counter for placeholders the vault does not know: the model reused one this
+# process never made (another sotto with another salt, or one restarted since). They stay as
+# they are, and the proxy reports them.
+UNRESOLVED = "unresolved"
+
+
 def restore_text(text: str, vault: Vault, counts: Counter | None = None) -> str:
     """Replace every placeholder the vault knows. Unknown placeholders stay as they are."""
 
@@ -39,6 +45,8 @@ def restore_text(text: str, vault: Vault, counts: Counter | None = None) -> str:
         if value is None and len(m.group(2)) == 12:
             value, suffix = vault.value(ph[:-4]), ph[-4:]
         if value is None:
+            if counts is not None:
+                counts[UNRESOLVED] += 1
             return ph
         if counts is not None:
             counts[m.group(1)] += 1

@@ -34,32 +34,42 @@ class Redactor:
         self._cache: OrderedDict[bytes, tuple[Span, ...]] = OrderedDict()
         self._cache_size = cache_size
         self.counts: Counter[str] = Counter()  # spans masked per type since the last reset
+        # Spans masked in text this redactor had not seen before, since the last reset: what a
+        # request brought that is new. Claude Code resends the whole conversation every turn.
+        self.fresh = 0
 
-    def _detect(self, text: str) -> tuple[Span, ...]:
-        """Detector spans, cached per text: the conversation history is resent every turn."""
+    def _detect(self, text: str) -> tuple[tuple[Span, ...], bool]:
+        """Detector spans, cached per text: the conversation history is resent every turn.
+        Also says whether the text was seen before."""
         key = hashlib.sha256(text.encode("utf-8", "surrogatepass")).digest()
         hit = self._cache.get(key)
         if hit is not None:
             self._cache.move_to_end(key)
-            return hit
+            return hit, True
         spans = tuple(self.detector.detect(text))
         self._cache[key] = spans
         if len(self._cache) > self._cache_size:
             self._cache.popitem(last=False)
-        return spans
+        return spans, False
 
     def spans(self, text: str) -> list[Span]:
         """Detector spans plus every exact occurrence of a value masked before."""
-        spans = list(self._detect(text))
+        return self._spans(text)[0]
+
+    def _spans(self, text: str) -> tuple[list[Span], bool]:
+        found, seen = self._detect(text)
+        spans = list(found)
         known = self.vault.known_values()
         if known is not None:
             spans += [Span(m.start(), m.end(), self.vault.kind_of(m.group()), 1.0, "known") for m in known.finditer(text)]
-        return merge(spans)
+        return merge(spans), seen
 
     def redact_text(self, text: str) -> str:
         if not text:
             return text
-        spans = self.spans(text)
+        spans, seen = self._spans(text)
+        if not seen:
+            self.fresh += len(spans)
         if not spans:
             return text
         out, pos = [], 0

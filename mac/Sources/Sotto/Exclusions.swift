@@ -53,3 +53,20 @@ struct ExclusionsCard: View {
         }
     }
 }
+
+/// Mask (the default) or observe only.
+struct ModeCard: View {
+    var engine: Engine
+    /// From the running proxy's feed, so the card shows what is in force right now.
+    var observing: Bool
+
+    var body: some View {
+        let on = engine.status?.observe ?? observing
+        Card(title: "Mode", subtitle: on ? "Observe only: requests go out unmasked; sotto counts what it would mask"
+                                         : "Mask: sensitive values are replaced before requests leave this Mac") {
+            Segmented(options: [(false, "Mask"), (true, "Observe only")],
+                      selection: Binding(get: { on }, set: { new in Task { await engine.setObserve(new) } }))
+                .disabled(!engine.isBundled || engine.busy)
+        }
+    }
+}

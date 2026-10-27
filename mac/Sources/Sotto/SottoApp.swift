@@ -168,7 +168,7 @@ enum Snapshotter {
 
     private static func render(_ view: some View, to path: String, dark: Bool, scale: CGFloat = 2) {
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        let renderer = ImageRenderer(content: view.environment(\.colorScheme, dark ? .dark : .light))
+        let renderer = ImageRenderer(content: view.environment(\.colorScheme, dark ? .dark : .light).environment(\.isSnapshot, true))
         renderer.scale = scale
         guard let image = renderer.nsImage, let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {

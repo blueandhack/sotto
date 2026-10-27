@@ -23,6 +23,7 @@ final class Engine {
         var port: Int
         var serveRunning: Bool
         var excluded: [Excluded] = []
+        var observe: Bool?
     }
 
     /// A project sent straight to the API, around sotto (`sotto exclude`).
@@ -124,6 +125,15 @@ final class Engine {
 
     /// The result of the last exclude or include, for the card to show.
     var exclusionNote: String?
+
+    /// Observe only (`sotto observe on`): count, but send requests unmasked. Running proxies
+    /// pick it up on their next request.
+    func setObserve(_ on: Bool) async {
+        await act {
+            let out = try await self.run(["observe", on ? "on" : "off"])
+            if out.code != 0 { throw EngineError(out.lastLine) }
+        }
+    }
 
     func exclude(_ folder: URL) async {
         await act {

@@ -6,9 +6,13 @@ import Observation
 struct Snapshot: Decodable, Sendable {
     struct Funnel: Decodable, Sendable {
         var requests = 0, scanned = 0, withFindings = 0, masked = 0, restored = 0
-        /// Requests that brought a value never masked before. Claude Code resends the whole
-        /// conversation, so after one sensitive value nearly every request carries it again.
+        /// Requests whose new text (not the resent conversation) had something to mask. Claude
+        /// Code resends the whole conversation, so nearly every request carries old values.
         var withNew: Int?
+        /// Scanned requests whose new text held nothing to mask.
+        var clean: Int?
+        /// Placeholders in replies that sotto could not restore.
+        var unresolved: Int?
     }
     struct Minute: Decodable, Sendable, Identifiable {
         var t: Double
@@ -28,9 +32,18 @@ struct Snapshot: Decodable, Sendable {
         var scanMs: Double?
         var redacted: [String: Int]
         var restored: [String: Int]
-        /// Values masked for the first time in this request; the rest came from earlier turns.
+        /// Values masked in text this request brought; the rest came from earlier turns.
         var new: Int?
+        var unresolved: Int?
         var id: Double { ts }
+
+        enum Kind: String, CaseIterable { case masked, clean, blocked, observed }
+        /// Matches `event_kind` in sotto's stats.py.
+        var kind: Kind {
+            if outcome == "blocked" || outcome == "rejected" { return .blocked }
+            if outcome == "observed" { return .observed }
+            return (new ?? (redacted.isEmpty ? 0 : 1)) > 0 ? .masked : .clean
+        }
         var date: Date { Date(timeIntervalSince1970: ts) }
     }
 
@@ -50,6 +63,8 @@ struct Snapshot: Decodable, Sendable {
     var pii: Bool?
     var detector: String?
     var version: String?
+    /// Observe mode: requests go out unmasked; sotto only counts.
+    var observe: Bool?
 
     /// How sotto was started: `sotto claude`, `sotto serve`, or an editor's wrapper.
     var modeLabel: String {
@@ -138,6 +153,45 @@ final class StatsStore {
         }
     }
 
+    // MARK: History (the Activity page): older events from sotto's history file, paged.
+
+    private(set) var history: [Snapshot.Event] = []
+    private(set) var historyDone = false
+    private(set) var historyKind: Snapshot.Event.Kind?
+
+    /// Load the first page for a filter (nil: all), or the next older page.
+    func loadHistory(kind: Snapshot.Event.Kind?, more: Bool = false) async {
+        if sampleMode {
+            history = snapshot.recent.reversed().filter { kind == nil || $0.kind == kind }
+            historyDone = true
+            historyKind = kind
+            return
+        }
+        if !more || kind != historyKind { history = []; historyDone = false; historyKind = kind }
+        guard !historyDone, let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        var c = URLComponents(string: "http://127.0.0.1:\(port)/_sotto/history")!
+        c.queryItems = [URLQueryItem(name: "limit", value: "100")]
+        if let last = history.last { c.queryItems!.append(URLQueryItem(name: "before", value: String(last.ts))) }
+        if let kind { c.queryItems!.append(URLQueryItem(name: "kind", value: kind.rawValue)) }
+        var request = URLRequest(url: c.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 4
+        struct Page: Decodable { var events: [Snapshot.Event] }
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let page = try? decoder.decode(Page.self, from: data) else { return }
+        history += page.events
+        historyDone = page.events.count < 100
+    }
+
+    /// Live events newer than the loaded history, newest first, for the top of the list.
+    func newerThanHistory(kind: Snapshot.Event.Kind?) -> [Snapshot.Event] {
+        let newest = history.first?.ts ?? 0
+        return snapshot.recent.reversed().filter { $0.ts > newest && (kind == nil || $0.kind == kind) }
+    }
+
     /// The port of the running proxy: runtime.json (written by sotto claude/serve) or 7788.
     private func discoverPort() -> Int {
         struct Runtime: Decodable { var pid: Int32; var port: Int }
@@ -153,10 +207,11 @@ final class StatsStore {
         for event in new.recent where event.ts > lastEventTs {
             if event.outcome == "blocked" || event.outcome == "rejected" {
                 pulses.append(Pulse(kind: .blocked, born: now))
-            } else if event.redacted.isEmpty {
+            } else if event.kind == .clean || event.kind == .observed {
                 pulses.append(Pulse(kind: .clean, born: now))
+            } else {
+                for (type, n) in event.redacted { for _ in 0..<min(n, 3) { pulses.append(Pulse(kind: .masked(type), born: now)) } }
             }
-            for (type, n) in event.redacted { for _ in 0..<min(n, 3) { pulses.append(Pulse(kind: .masked(type), born: now)) } }
             for (type, n) in event.restored { for _ in 0..<min(n, 3) { pulses.append(Pulse(kind: .restored(type), born: now)) } }
         }
         lastEventTs = max(lastEventTs, new.recent.last?.ts ?? 0)
@@ -193,7 +248,8 @@ struct SampleFeed {
         snap.requests = ["forwarded": snap.funnel.requests - 2, "blocked": 1, "rejected": 1]
         snap.funnel.scanned = snap.funnel.requests - 2
         snap.funnel.withFindings = Int(Double(snap.funnel.scanned) * 0.34)
-        snap.funnel.withNew = Int(Double(snap.funnel.scanned) * 0.08)
+        snap.funnel.withNew = Int(Double(snap.funnel.scanned) * 0.22)
+        snap.funnel.clean = snap.funnel.scanned - (snap.funnel.withNew ?? 0)
         snap.funnel.masked = snap.maskedTotal
         snap.funnel.restored = snap.restoredTotal
         let masked = snap.maskedTotal
@@ -213,7 +269,7 @@ struct SampleFeed {
         return .init(ts: ts, path: "/v1/messages", outcome: blocked ? "blocked" : "forwarded", status: blocked ? 500 : 200,
                      scanMs: blocked ? nil : Double.random(in: 6...120), redacted: redacted,
                      restored: redacted.isEmpty || Bool.random() ? [:] : ["SECRET": 1],
-                     new: redacted.isEmpty || Int.random(in: 0..<4) > 0 ? 0 : 1)
+                     new: redacted.isEmpty || Int.random(in: 0..<3) == 0 ? 0 : redacted.values.reduce(0, +))
     }
 
     mutating func next() -> Snapshot {
@@ -229,6 +285,7 @@ struct SampleFeed {
             if e.scanMs != nil { snap.funnel.scanned += 1 }
             if !e.redacted.isEmpty { snap.funnel.withFindings += 1 }
             if (e.new ?? 0) > 0 { snap.funnel.withNew = (snap.funnel.withNew ?? 0) + 1 }
+            else if e.scanMs != nil { snap.funnel.clean = (snap.funnel.clean ?? 0) + 1 }
             for (k, v) in e.redacted {
                 snap.redacted[k, default: 0] += v; snap.funnel.masked += v
                 snap.detection["masked", default: 0] += v

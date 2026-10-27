@@ -5,6 +5,7 @@ Nothing here may ever hold a value or a placeholder: the feed is read by another
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -13,6 +14,9 @@ from collections import Counter, deque
 from pathlib import Path
 
 TOKEN_FILE = Path.home() / ".config" / "sotto" / "stats-token"
+# Every request's event (counts only), kept across restarts for the app's Activity page.
+HISTORY_FILE = Path.home() / ".config" / "sotto" / "history.jsonl"
+HISTORY_KEEP = 20_000  # events kept when the file is compacted
 
 
 def stats_token(path: Path = TOKEN_FILE) -> str:
@@ -27,9 +31,70 @@ def stats_token(path: Path = TOKEN_FILE) -> str:
     return token
 
 
+class History:
+    """An append-only JSONL file of events, shared by every sotto process on this Mac (0600).
+    Lines are small, so appends from several processes do not interleave."""
+
+    def __init__(self, path: Path = HISTORY_FILE, keep: int = HISTORY_KEEP):
+        self.path, self.keep = path, keep
+        self._appended = 0
+
+    def append(self, event: dict) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a") as f:
+                f.write(json.dumps(event, separators=(",", ":")) + "\n")
+            self._appended += 1
+            if self._appended % 1000 == 0:
+                self._compact()
+        except OSError:
+            pass  # history is a convenience; never fail a request over it
+
+    def _compact(self) -> None:
+        lines = self.path.read_text().splitlines()
+        if len(lines) > self.keep * 1.5:
+            tmp = self.path.with_suffix(".tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write("\n".join(lines[-self.keep:]) + "\n")
+            tmp.replace(self.path)
+
+    def page(self, before: float | None = None, limit: int = 100, outcome: str | None = None) -> list[dict]:
+        """Events older than `before`, newest first. `outcome`: masked, clean, blocked or observed."""
+        try:
+            lines = self.path.read_text().splitlines()
+        except OSError:
+            return []
+        out = []
+        for line in reversed(lines):
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if before is not None and e.get("ts", 0) >= before:
+                continue
+            if outcome and event_kind(e) != outcome:
+                continue
+            out.append(e)
+            if len(out) >= limit:
+                break
+        return out
+
+
+def event_kind(e: dict) -> str:
+    """How the app labels an event: blocked, observed, masked (new sensitive text) or clean."""
+    if e.get("outcome") in ("blocked", "rejected"):
+        return "blocked"
+    if e.get("outcome") == "observed":
+        return "observed"
+    return "masked" if e.get("new") else "clean"
+
+
 class Stats:
-    def __init__(self, recent: int = 200):
+    def __init__(self, recent: int = 200, history: History | None = None):
         self._lock = threading.Lock()
+        self.history = history
         self.started = time.time()
         self.requests = Counter()  # by outcome: forwarded, blocked, rejected, upstream_error
         self.redacted = Counter()  # by type
@@ -38,12 +103,18 @@ class Stats:
         self.events: deque[dict] = deque(maxlen=recent)
         self.scanned = 0  # requests that went through the detectors
         self.with_findings = 0  # of those, requests where something was masked
-        self.with_new = 0  # of those, requests that brought a value never masked before
+        self.with_new = 0  # of those, requests whose new text (not resent history) had something to mask
+        self.unresolved = 0  # placeholders in replies that this process could not restore
         self.minutes: deque[dict] = deque(maxlen=180)  # per-minute buckets for the timeline
 
     def record(self, path: str, outcome: str, status: int, scan_ms: float | None = None,
                redacted: Counter | None = None, restored: Counter | None = None, new: int = 0) -> None:
+        from .restore import UNRESOLVED
+
+        restored = Counter(restored or {})
+        unresolved = restored.pop(UNRESOLVED, 0)
         with self._lock:
+            self.unresolved += unresolved
             self.requests[outcome] += 1
             self.redacted.update(redacted or {})
             self.restored.update(restored or {})
@@ -60,11 +131,15 @@ class Stats:
             bucket["masked"].update(redacted or {})
             bucket["restored"] += sum((restored or {}).values())
             bucket["blocked"] += outcome in ("blocked", "rejected")
-            self.events.append({
-                "ts": round(time.time(), 3), "path": path, "outcome": outcome, "status": status,
+            event = {
+                "ts": round(time.time(), 6), "path": path, "outcome": outcome, "status": status,
                 "scan_ms": None if scan_ms is None else round(scan_ms, 1),
-                "redacted": dict(redacted or {}), "restored": dict(restored or {}), "new": new,
-            })
+                "redacted": dict(redacted or {}), "restored": dict(restored), "new": new,
+                "unresolved": unresolved,
+            }
+            self.events.append(event)
+        if self.history:
+            self.history.append(event)
 
     def snapshot(self, **extra) -> dict:
         with self._lock:
@@ -76,10 +151,12 @@ class Stats:
             return {
                 "started": self.started, "uptime_s": round(time.time() - self.started, 1),
                 "requests": dict(self.requests), "redacted": dict(self.redacted), "restored": dict(self.restored),
+                # clean: scanned requests whose new text held nothing to mask (resent history may).
                 "funnel": {"requests": sum(self.requests.values()), "scanned": self.scanned,
+                           "clean": self.scanned - self.with_new,
                            "with_findings": self.with_findings, "with_new": self.with_new,
                            "masked": sum(self.redacted.values()),
-                           "restored": sum(self.restored.values())},
+                           "restored": sum(self.restored.values()), "unresolved": self.unresolved},
                 "timeline": [{**b, "masked": dict(b["masked"])} for b in self.minutes],
                 "scan_ms": {"p50": pct(0.5), "p95": pct(0.95), "n": len(lat)},
                 "recent": list(self.events), **extra,

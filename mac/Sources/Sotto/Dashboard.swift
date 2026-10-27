@@ -159,6 +159,22 @@ struct OfflineBanner: View {
     }
 }
 
+/// Observe mode is a choice, but never a quiet one.
+struct ObserveBanner: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eye.trianglebadge.exclamationmark").foregroundStyle(Theme.danger)
+            Text("Observe only: requests go to Anthropic unmasked. sotto counts what it would mask. Switch back in Settings.")
+                .foregroundStyle(Theme.text)
+            Spacer()
+        }
+        .font(.system(size: 12.5))
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Capsule().fill(Theme.danger.opacity(0.08)))
+        .overlay(Capsule().strokeBorder(Theme.danger.opacity(0.2)))
+    }
+}
+
 private struct PreviewToggle: View {
     var store: StatsStore
     var body: some View {
@@ -178,6 +194,7 @@ struct OverviewPage: View {
         VStack(spacing: 16) {
             PageHeader(title: "Overview", subtitle: "What left this Mac, and what stayed") { PreviewToggle(store: store) }
             if case .offline(let reason) = store.connection { OfflineBanner(reason: reason) }
+            if s.observe == true { ObserveBanner() }
             HStack(spacing: 12) {
                 KPI(title: "Unique values masked", value: (s.vaultSize ?? 0).compact, icon: "lock.fill",
                     footnote: "\(s.maskedTotal.compact) masks applied, incl. resends")
@@ -210,18 +227,37 @@ struct OverviewPage: View {
 
 struct ActivityPage: View {
     var store: StatsStore
+    @State private var filter: Snapshot.Event.Kind? = nil
+    @Environment(\.isSnapshot) private var isSnapshot
 
     var body: some View {
         let s = store.snapshot
         VStack(spacing: 16) {
-            PageHeader(title: "Activity", subtitle: "Recent requests. Counts only: sotto never shows a value.") { PreviewToggle(store: store) }
+            PageHeader(title: "Activity", subtitle: "Every request, newest first. Counts only: sotto never shows a value.") { PreviewToggle(store: store) }
             Card(title: "Last hour", subtitle: "Masked values per minute · red dot: a blocked request") {
                 MaskedTimeline(minutes: s.timeline).frame(height: 120)
             }
             .fixedSize(horizontal: false, vertical: true)
-            Card(title: "Requests", subtitle: "Most recent first") {
-                ActivityTable(events: s.recent, rows: 11)
+            Card(title: "Requests", subtitle: subtitle) {
+                Segmented(options: [(Optional<Snapshot.Event.Kind>.none, "All"), (.masked, "Masked"), (.clean, "Clean"),
+                                    (.blocked, "Blocked"), (.observed, "Observed")], selection: $filter)
+            } content: {
+                let events = store.newerThanHistory(kind: filter) + store.history
+                ActivityTable(events: events, rows: isSnapshot ? 11 : events.count, newestFirst: true,
+                              footer: store.historyDone ? nil : { Task { await store.loadHistory(kind: filter, more: true) } })
             }
+        }
+        .task(id: filter) { await store.loadHistory(kind: filter) }
+        .task(id: store.sampleMode) { await store.loadHistory(kind: filter) }
+    }
+
+    private var subtitle: String {
+        switch filter {
+        case .masked: "Requests whose new text had something to mask"
+        case .clean: "Nothing new to mask (earlier turns may still hold masked values)"
+        case .blocked: "Never sent: scanning failed or the endpoint is not scanned"
+        case .observed: "Observe mode: sent unmasked, only counted"
+        case nil: "Kept across restarts in ~/.config/sotto/history.jsonl"
         }
     }
 }
@@ -331,6 +367,8 @@ struct SettingsPage: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
+                ModeCard(engine: engine, observing: store.snapshot.observe == true)
+                    .fixedSize(horizontal: false, vertical: true)
                 ExclusionsCard(engine: engine)
                     .fixedSize(horizontal: false, vertical: true)
                 }
@@ -360,6 +398,11 @@ struct ActivityTable: View {
     var events: [Snapshot.Event]
     var rows = 14
     var compact = false
+    /// `events` already newest first (history); otherwise the feed's oldest-first `recent`.
+    var newestFirst = false
+    /// Shown at the end of a scrolling list to load older events.
+    var footer: (() -> Void)? = nil
+    @Environment(\.isSnapshot) private var isSnapshot
 
     var body: some View {
         VStack(spacing: 0) {
@@ -374,7 +417,19 @@ struct ActivityTable: View {
             .font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
             .padding(.bottom, 6)
             Rectangle().fill(Theme.border).frame(height: 1)
-            ForEach(Array(events.suffix(rows).reversed())) { e in row(e) }
+            let shown = newestFirst ? Array(events.prefix(rows)) : Array(events.suffix(rows).reversed())
+            if newestFirst && !isSnapshot {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(shown) { e in row(e) }
+                        if let footer {
+                            PillButton(title: "Load older", icon: "arrow.down", action: footer).padding(.vertical, 10)
+                        }
+                    }
+                }
+            } else {
+                ForEach(shown) { e in row(e) }
+            }
             if events.isEmpty {
                 Text("No requests yet").font(.system(size: 12)).foregroundStyle(Theme.secondary).padding(.top, 12)
             }
@@ -383,18 +438,25 @@ struct ActivityTable: View {
     }
 
     private func row(_ e: Snapshot.Event) -> some View {
-        let blocked = e.outcome == "blocked" || e.outcome == "rejected"
-        let repeated = e.new == 0 && !e.redacted.isEmpty
+        let kind = e.kind
+        let (label, icon, tint): (String, String, Color) = switch kind {
+        case .blocked: ("Blocked", "hand.raised.fill", Theme.danger)
+        case .observed: ("Observed", "eye", Theme.secondary)
+        case .masked: ("Masked", "eye.slash", Theme.accent)
+        case .clean: ("Clean", "checkmark.circle", Theme.secondary)
+        }
+        // Clean, but carrying values masked in earlier turns.
+        let earlier = kind == .clean && !e.redacted.isEmpty
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(e.date, format: .dateTime.hour().minute().second())
                     .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.secondary).frame(width: 70, alignment: .leading)
                 HStack(spacing: 5) {
-                    Image(systemName: blocked ? "hand.raised.fill" : (e.redacted.isEmpty ? "checkmark.circle" : (repeated ? "arrow.clockwise" : "eye.slash")))
-                    Text(blocked ? "Blocked" : (e.redacted.isEmpty ? "Clean" : (repeated ? "Re-masked" : "Masked")))
+                    Image(systemName: icon)
+                    Text(label)
                 }
-                .help(repeated ? "Only values masked in earlier turns: Claude Code resends the whole conversation" : "")
-                .font(.system(size: 11.5)).foregroundStyle(blocked ? Theme.danger : (e.redacted.isEmpty || repeated ? Theme.secondary : Theme.accent))
+                .help(earlier ? "Nothing new to mask; earlier turns, which Claude Code resends, still held masked values" : "")
+                .font(.system(size: 11.5)).foregroundStyle(tint)
                 .frame(width: 90, alignment: .leading)
                 if !compact {
                     Text(e.path).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(Theme.text).lineLimit(1)
@@ -404,7 +466,7 @@ struct ActivityTable: View {
                     ForEach(e.redacted.sorted { $0.key < $1.key }, id: \.key) { type, n in
                         HStack(spacing: 4) {
                             Image(systemName: Theme.icon(type)).font(.system(size: 9.5)).foregroundStyle(Theme.secondary)
-                            Text("\(Theme.label(type)) \(n)").font(.system(size: 11.5)).foregroundStyle(Theme.text)
+                            Text("\(Theme.label(type)) \(n)").font(.system(size: 11.5)).foregroundStyle(earlier ? Theme.secondary : Theme.text)
                         }
                     }
                 }

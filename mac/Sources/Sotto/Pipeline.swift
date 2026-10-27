@@ -118,7 +118,9 @@ private struct FlowMap {
     let boundaryX: CGFloat
     let yTop: CGFloat, yOut: CGFloat, yRet: CGFloat
 
-    var clean: Int { max(s.funnel.scanned - s.funnel.withFindings, 0) }
+    /// Requests whose new text held nothing to mask (they may still carry masked earlier turns).
+    var clean: Int { s.funnel.clean ?? max(s.funnel.scanned - s.funnel.withFindings, 0) }
+    var sensitive: Int { s.funnel.withNew ?? s.funnel.withFindings }
 
     static let endpointRadius: CGFloat = 26
 
@@ -176,8 +178,8 @@ private struct FlowMap {
         let total = max(s.contentRequests, 1)
         func width(_ v: Int) -> CGFloat { v > 0 ? 3 + 9 * sqrt(CGFloat(min(v, total)) / CGFloat(total)) : 1.5 }
         let volumes: [String: Int] = [
-            "intake": s.contentRequests, "clean": clean, "sensitive": s.funnel.withFindings,
-            "placeholders": s.funnel.withFindings, "blocked": s.blocked,
+            "intake": s.contentRequests, "clean": clean, "sensitive": sensitive,
+            "placeholders": sensitive, "blocked": s.blocked,
             "answers": s.funnel.scanned, "restored": s.restoredTotal,
         ]
         let colors: [String: Color] = [
@@ -253,10 +255,15 @@ private struct FlowMap {
         // Lane labels, each on a small pill.
         let scan = nodes["scan"]!.rect
         let restore = nodes["restore"]!.rect, claude = nodes["claude"]!.rect, anth = nodes["anthropic"]!.rect
-        pill(&context, "\(clean.compact) clean · sent as is", at: CGPoint(x: (scan.maxX + anth.minX) / 2, y: yTop))
+        pill(&context, "\(clean.compact) clean · nothing new to mask", at: CGPoint(x: (scan.maxX + anth.minX) / 2, y: yTop))
         // Labels sit on their own lanes, so they never cover another node.
-        pill(&context, "\(s.funnel.withFindings.compact) sensitive" + (s.funnel.withNew.map { " · \($0.compact) new" } ?? ""), at: lanes["sensitive"]!.point(at: lanes["sensitive"]!.length / 2))
-        pill(&context, "placeholders only", at: lanes["placeholders"]!.point(at: lanes["placeholders"]!.length * 0.42))
+        pill(&context, "\(sensitive.compact) sensitive", at: lanes["sensitive"]!.point(at: lanes["sensitive"]!.length / 2))
+        if s.observe == true {
+            pill(&context, "observe only · sent unmasked", at: lanes["placeholders"]!.point(at: lanes["placeholders"]!.length * 0.42),
+                 color: Theme.danger)
+        } else {
+            pill(&context, "placeholders only", at: lanes["placeholders"]!.point(at: lanes["placeholders"]!.length * 0.42))
+        }
         let b = lanes["blocked"]!.point(at: lanes["blocked"]!.length * 0.38)
         pill(&context, "\(s.blocked.compact) blocked", at: CGPoint(x: b.x - 38, y: b.y),
              color: s.blocked > 0 ? Theme.danger : Theme.secondary)

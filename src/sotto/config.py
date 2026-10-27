@@ -6,6 +6,7 @@
 
     [detect]
     pii = false            # also mask personal data
+    observe = false        # count what would be masked, but forward every request unchanged
 
     [allowlist]            # added to the built-in allowlist, never replacing it
     strings = []
@@ -32,7 +33,7 @@ CONFIG_FILE = Path.home() / ".config" / "sotto" / "config.toml"
 
 _SCHEMA = {
     "server": {"port": int, "upstream": str},
-    "detect": {"pii": bool},
+    "detect": {"pii": bool, "observe": bool},
     "allowlist": {"strings": list, "patterns": list},
     "log": {"level": str},
 }
@@ -48,6 +49,7 @@ class Config:
     port: int = 7788
     upstream: str = "https://api.anthropic.com"
     pii: bool = False
+    observe: bool = False
     allow_strings: list[str] = field(default_factory=list)
     allow_patterns: list[str] = field(default_factory=list)
     restore: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_POLICY))
@@ -82,6 +84,7 @@ def load(path: Path = CONFIG_FILE) -> Config:
     if not re.match(r"https?://", cfg.upstream):
         raise ConfigError(f"{path}: server.upstream must be an http(s) URL")
     cfg.pii = detect.get("pii", cfg.pii)
+    cfg.observe = detect.get("observe", cfg.observe)
     cfg.allow_strings = [str(s) for s in allow.get("strings", [])]
     cfg.allow_patterns = [str(p) for p in allow.get("patterns", [])]
     for p in cfg.allow_patterns:
@@ -100,3 +103,58 @@ def load(path: Path = CONFIG_FILE) -> Config:
     if cfg.log_level not in LOG_LEVELS:
         raise ConfigError(f"{path}: log.level must be one of {', '.join(LOG_LEVELS)}")
     return cfg
+
+
+def set_detect_flag(key: str, value: bool, path: Path = CONFIG_FILE) -> None:
+    """Set one boolean in [detect], keeping the rest of the file as written. The result must
+    load cleanly, or the file is left as it was."""
+    text = path.read_text() if path.exists() else ""
+    line = f"{key} = {'true' if value else 'false'}"
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.strip() == "[detect]"), None)
+    if start is None:
+        lines += ([""] if lines and lines[-1].strip() else []) + ["[detect]", line]
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+        hit = next((i for i in range(start + 1, end) if re.match(rf"\s*{key}\s*=", lines[i])), None)
+        if hit is None:
+            lines.insert(start + 1, line)
+        else:
+            lines[hit] = line
+    new = "\n".join(lines) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(new)
+    try:
+        load(tmp)
+    except ConfigError:
+        tmp.unlink()
+        raise
+    tmp.replace(path)
+
+
+class ObserveFlag:
+    """`detect.observe` from the config file, re-read whenever the file changes, so switching
+    mode needs no restart. An unreadable or invalid file means masking: the safe side."""
+
+    def __init__(self, path: Path = CONFIG_FILE, initial: bool = False):
+        self.path = path
+        self.value = initial
+        self._stamp = self._mtime()
+
+    def _mtime(self):
+        try:
+            st = self.path.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def __call__(self) -> bool:
+        stamp = self._mtime()
+        if stamp != self._stamp:
+            self._stamp = stamp
+            try:
+                self.value = load(self.path).observe
+            except ConfigError:
+                self.value = False
+        return self.value

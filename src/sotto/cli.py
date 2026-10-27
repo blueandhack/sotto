@@ -227,6 +227,30 @@ def protect(
 
 
 @app.command()
+def observe(action: str = typer.Argument("status", help="on, off, or status")) -> None:
+    """Observe only (on): count what would be masked, but send every request unchanged. Off: mask."""
+    from .config import CONFIG_FILE, ConfigError, set_detect_flag
+
+    cfg = _config()
+    if action in ("on", "off"):
+        try:
+            set_detect_flag("observe", action == "on", cfg.path or CONFIG_FILE)
+        except (ConfigError, OSError) as e:
+            typer.echo(f"sotto observe: {e}", err=True)
+            raise typer.Exit(1)
+        on = action == "on"
+    elif action == "status":
+        on = cfg.observe
+    else:
+        typer.echo("sotto observe: use on, off or status", err=True)
+        raise typer.Exit(2)
+    typer.echo("observe only: requests go to Anthropic UNMASKED; sotto only counts what it would mask" if on
+               else "masking: sensitive values are replaced before requests leave this Mac", err=True)
+    if action != "status":
+        typer.echo("Running proxies switch on their next request.", err=True)
+
+
+@app.command()
 def exclude(
     path: Path = typer.Argument(None, help="A folder in the project (default: the current folder)."),
     list_: bool = typer.Option(False, "--list", help="List excluded projects."),
@@ -282,6 +306,7 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
     binary, model = find_binary(), find_model()
     out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
            "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None,
+           "observe": cfg.observe,
            "excluded": excluded_projects()}
     typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 

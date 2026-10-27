@@ -64,6 +64,11 @@ enum Theme {
     }
 }
 
+extension EnvironmentValues {
+    /// True while Snapshotter renders: views avoid what ImageRenderer cannot draw (ScrollView).
+    @Entry var isSnapshot = false
+}
+
 enum Appearance: String, CaseIterable, Identifiable {
     case system, light, dark
     var id: String { rawValue }

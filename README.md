@@ -79,6 +79,15 @@ sotto protect on      # Claude Code's user settings now send every session to it
 
 `sotto protect` changes one key, `env.ANTHROPIC_BASE_URL`, in `~/.claude/settings.json`, and keeps a backup next to it. Sessions already running switch over when it is turned on; turning it off reaches only sessions started afterwards. While it is on, `sotto serve` must keep running, or Claude Code cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
+### Observe only
+
+```sh
+sotto observe on       # scan and count, but send every request unmasked
+sotto observe off      # mask again
+```
+
+Observe mode shows what sotto would catch without changing anything: requests go to Anthropic exactly as Claude Code sent them, nothing is blocked, and the dashboard says so on every page. Running proxies switch on their next request; if the config file becomes invalid, they mask.
+
 ### Leave a project out
 
 ```sh
@@ -102,6 +111,7 @@ Optional, in `~/.config/sotto/config.toml`. Unknown keys and bad values are erro
 ```toml
 [detect]
 pii = false            # also mask names, emails, phones, addresses, account numbers
+observe = false        # count what would be masked, but send requests UNMASKED (`sotto observe on|off`)
 
 [allowlist]            # added to the built-in list (documented example keys, test cards)
 strings = []
@@ -128,6 +138,7 @@ level = "info"         # logs contain types and counts, never values
 | Stats token for the Mac app | `~/.config/sotto/stats-token` (0600) |
 | Logs: paths, types, counts and timings, never values | `~/.config/sotto/sotto.log` (0600) |
 | Running proxy's port | `~/.config/sotto/runtime.json` (0600) |
+| Request history for the Activity page: time, endpoint, outcome, counts by type; never values | `~/.config/sotto/history.jsonl` (0600), last 20,000 requests |
 | Masked values | Process memory only, cleared on exit |
 
 sotto makes no network calls except the request it forwards, and `sotto setup`'s one model download. There is no telemetry and no update check.
