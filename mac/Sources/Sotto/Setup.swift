@@ -6,7 +6,7 @@ struct SetupCard: View {
     var engine: Engine
 
     var body: some View {
-        Card(title: "Setup", subtitle: engine.setupDone ? "Every Claude Code session goes through sotto" : "Three steps, once") {
+        Card(title: "Setup", subtitle: engine.setupDone ? "Your coding agents go through sotto" : "Three steps, once") {
             if !engine.isBundled {
                 Text("This build has no bundled engine. Build the app with mac/build-app.sh, or use the sotto command line.")
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
@@ -31,11 +31,17 @@ struct SetupCard: View {
                                 .disabled(!engine.hasModel).opacity(engine.hasModel ? 1 : 0.5)
                         }
                     }
-                    step(3, "Protect Claude Code", done: engine.protected,
-                         detail: engine.protected ? "Terminal, VS Code and the desktop app; running sessions switch over now"
-                                                  : "Points Claude Code at sotto in ~/.claude/settings.json") {
-                        ProtectionToggle(engine: engine)
+                    step(3, "Protect your coding agents", done: engine.anyProtected,
+                         detail: "Each one sends its requests through sotto") { EmptyView() }
+                    VStack(spacing: 0) {
+                        ClientRow(engine: engine, id: "claude", name: "Claude Code", icon: "CC",
+                                  detail: "~/.claude/settings.json", note: "open sessions switch now")
+                        ClientRow(engine: engine, id: "codex", name: "Codex", icon: "Cx",
+                                  detail: "~/.codex/config.toml", note: "new sessions")
+                        ClientRow(engine: engine, id: "pi", name: "pi", icon: "π",
+                                  detail: "~/.pi/agent/models.json", note: "new sessions")
                     }
+                    .padding(.leading, 38)
                 }
                 if let error = engine.error {
                     Text(error).font(.system(size: 11.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
@@ -74,6 +80,47 @@ struct SetupCard: View {
 }
 
 /// On only when the service runs: Claude Code must never be pointed at a proxy that is not there.
+/// One coding agent under step 3: its switch, or why it has none.
+private struct ClientRow: View {
+    var engine: Engine
+    var id: String
+    var name: String
+    var icon: String
+    var detail: String
+    var note: String
+
+    var body: some View {
+        let c = engine.client(id)
+        let installed = c?.installed ?? false
+        let on = c?.on == true
+        HStack(spacing: 10) {
+            Text(icon).font(.system(size: icon.count == 1 ? 13 : 10, weight: .bold)).foregroundStyle(Theme.secondary)
+                .frame(width: 26, height: 26).background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.faint))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(installed ? Theme.text : Theme.secondary)
+                Text(subtitle(c, installed: installed, on: on)).font(.system(size: 11))
+                    .foregroundStyle(c?.error != nil ? Theme.danger : Theme.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            if installed && c?.error == nil {
+                let canTurnOn = engine.serviceRunning && engine.hasModel
+                Switch(isOn: on, enabled: !engine.busy && (on || canTurnOn)) { new in
+                    Task { await engine.setProtection(new, client: id) }
+                }
+                .accessibilityLabel("Protect \(name)")
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func subtitle(_ c: Engine.Client?, installed: Bool, on: Bool) -> String {
+        if !installed { return "Not installed" }
+        if let error = c?.error { return error }
+        if !on, let other = c?.other { return "Already uses \(other.text); sotto leaves it alone" }
+        return on ? "\(detail) · \(note)" : detail
+    }
+}
+
 struct ProtectionToggle: View {
     var engine: Engine
 

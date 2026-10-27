@@ -291,12 +291,12 @@ struct SettingsPage: View {
                 VStack(spacing: 12) {
                     SetupCard(engine: engine)
                         .fixedSize(horizontal: false, vertical: true)
-                    Card(title: "Appearance") {
-                        Segmented(options: Appearance.allCases.map { ($0, $0.title) }, selection: $appearance)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    Card(title: "Preview data", subtitle: "Synthetic numbers, clearly labeled, for when sotto is not running") {
-                        PreviewToggle(store: store)
+                    Card(title: "Display", subtitle: "Appearance, and preview data: synthetic numbers, clearly labeled") {
+                        HStack {
+                            Segmented(options: Appearance.allCases.map { ($0, $0.title) }, selection: $appearance)
+                            Spacer()
+                            PreviewToggle(store: store)
+                        }
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Card(title: "Privacy") {

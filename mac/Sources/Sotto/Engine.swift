@@ -27,6 +27,26 @@ final class Engine {
         var pii: Bool?
         var pass: [String]?
         var rules: Rules?
+        /// Per coding agent: claude, codex, pi (`sotto protect status`).
+        var clients: [String: Client]?
+    }
+
+    struct Client: Decodable, Equatable {
+        var installed: Bool?
+        var on: Bool?
+        var error: String?
+        /// Another gateway the user set for this tool: sotto leaves it alone.
+        var other: OtherValue?
+
+        /// Codex reports one provider name, pi a list of provider names.
+        enum OtherValue: Decodable, Equatable {
+            case one(String), many([String])
+            init(from decoder: Decoder) throws {
+                let c = try decoder.singleValueContainer()
+                if let s = try? c.decode(String.self) { self = .one(s) } else { self = .many((try? c.decode([String].self)) ?? []) }
+            }
+            var text: String { switch self { case .one(let s): s; case .many(let a): a.joined(separator: ", ") } }
+        }
     }
 
     /// `[rules] mask` and the allowlist, as `sotto status` reports them.
@@ -69,6 +89,9 @@ final class Engine {
     var hasModel: Bool { status?.model != nil }
     var serviceRunning: Bool { status?.serveRunning == true }
     var protected: Bool { status?.protect.on == true }
+
+    func client(_ id: String) -> Client? { id == "claude" ? Client(installed: true, on: protected) : status?.clients?[id] }
+    var anyProtected: Bool { protected || (status?.clients?.values.contains { $0.on == true } ?? false) }
     var setupDone: Bool { hasModel && serviceRunning && protected }
 
     func start() {
@@ -122,18 +145,19 @@ final class Engine {
     /// protection off first.
     func stopService() async {
         await act {
-            if self.protected { try await self.applyProtection(false) }
+            if self.anyProtected { try await self.applyProtection(false, client: nil) }
             try await self.service.unregister()
         }
     }
 
-    func setProtection(_ on: Bool) async {
-        await act { try await self.applyProtection(on) }
+    /// One coding agent (claude, codex, pi) on or off; `client: nil` is every one of them.
+    func setProtection(_ on: Bool, client: String? = "claude") async {
+        await act { try await self.applyProtection(on, client: client) }
     }
 
-    private func applyProtection(_ on: Bool) async throws {
+    private func applyProtection(_ on: Bool, client: String?) async throws {
         if on && !serviceRunning { throw EngineError("Start the background service first.") }
-        let out = try await run(["protect", on ? "on" : "off"])
+        let out = try await run(["protect", on ? "on" : "off"] + (client.map { ["--client", $0] } ?? []))
         if out.code != 0 { throw EngineError(out.lastLine) }
     }
 
@@ -265,7 +289,8 @@ final class Engine {
                           excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)],
                           pii: true, pass: ["PERSON", "DATE"],
                           rules: .init(mask: [.init(name: "Employee ID", pattern: "EMP-\\d{6}", type: "ACCOUNT")],
-                                       allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"]))
+                                       allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"]),
+                          clients: ["codex": .init(installed: true, on: true), "pi": .init(installed: true, on: false)])
         e.serviceStatus = .enabled
         return e
     }
