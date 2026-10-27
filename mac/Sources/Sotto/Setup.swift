@@ -79,7 +79,6 @@ struct SetupCard: View {
     }
 }
 
-/// On only when the service runs: Claude Code must never be pointed at a proxy that is not there.
 /// One coding agent under step 3: its switch, or why it has none.
 private struct ClientRow: View {
     var engine: Engine
@@ -121,17 +120,6 @@ private struct ClientRow: View {
     }
 }
 
-struct ProtectionToggle: View {
-    var engine: Engine
-
-    var body: some View {
-        let canTurnOn = engine.serviceRunning && engine.hasModel
-        Switch(isOn: engine.protected, enabled: !engine.busy && (engine.protected || canTurnOn)) { on in
-            Task { await engine.setProtection(on) }
-        }
-    }
-}
-
 /// A switch drawn in SwiftUI, so it looks the same in both appearances and in snapshots.
 struct Switch: View {
     var isOn: Bool
@@ -164,7 +152,7 @@ struct ProtectionRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: engine.protected ? (engine.serviceRunning ? "checkmark.shield.fill" : "exclamationmark.shield.fill") : "shield")
+            Image(systemName: engine.anyProtected ? (engine.serviceRunning ? "checkmark.shield.fill" : "exclamationmark.shield.fill") : "shield")
                 .font(.system(size: 16)).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(Theme.text)
@@ -172,7 +160,7 @@ struct ProtectionRow: View {
             }
             Spacer()
             if engine.hasModel && engine.serviceRunning {
-                ProtectionToggle(engine: engine)
+                PillButton(title: "Agents", action: openSetup)  // one switch per agent, in Settings
             } else if engine.isBundled {
                 PillButton(title: "Set up", prominent: true, action: openSetup)
             }
@@ -181,20 +169,29 @@ struct ProtectionRow: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.faint))
     }
 
+    /// The coding agents protected right now, by name.
+    private var protectedNames: [String] {
+        [("claude", "Claude Code"), ("codex", "Codex"), ("pi", "pi")].compactMap { engine.client($0.0)?.on == true ? $0.1 : nil }
+    }
+
     private var title: String {
-        if engine.protected { return engine.serviceRunning ? "Claude Code is protected" : "sotto is not running" }
-        return "Claude Code is not protected"
+        let names = protectedNames
+        if names.isEmpty { return "No coding agent is protected" }
+        if !engine.serviceRunning { return "sotto is not running" }
+        return names.count == 1 ? "\(names[0]) is protected" : "\(names.count) agents are protected"
     }
 
     private var subtitle: String {
-        if engine.protected && !engine.serviceRunning { return "Claude Code cannot connect until it restarts" }
-        if engine.protected { return "Every session goes through sotto" }
-        if !engine.isBundled { return "Use sotto claude in a terminal" }
-        return engine.hasModel && engine.serviceRunning ? "Only sotto claude sessions are scanned" : "Finish setup to protect every session"
+        let names = protectedNames
+        if !names.isEmpty && !engine.serviceRunning { return "They cannot connect until sotto restarts" }
+        if names.count > 1 { return names.joined(separator: ", ") }
+        if names.count == 1 { return "Every session goes through sotto" }
+        if !engine.isBundled { return "Use sotto claude or sotto codex in a terminal" }
+        return engine.hasModel && engine.serviceRunning ? "Only sotto claude and sotto codex are scanned" : "Finish setup to protect every session"
     }
 
     private var color: Color {
-        if engine.protected { return engine.serviceRunning ? Theme.success : Theme.danger }
+        if engine.anyProtected { return engine.serviceRunning ? Theme.success : Theme.danger }
         return Theme.secondary
     }
 }

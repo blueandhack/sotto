@@ -10,7 +10,7 @@ Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned
 
 > **Status: pre-release.** sotto works end to end, but it has not been audited. Treat it as a safety layer, not a guarantee. See [Limitations](#limitations).
 
-![The sotto dashboard: the live flow map shows where each request goes](mac/docs/overview-light.png)
+![The sotto dashboard: requests out and replies back, per coding agent](mac/docs/overview-light.png)
 
 ## How it works
 

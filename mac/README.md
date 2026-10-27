@@ -12,6 +12,9 @@ A menu-bar app that sets sotto up, runs it in the background and shows what it d
 
 ![Overview, light](docs/overview-light.png)
 ![Overview, dark](docs/overview-dark.png)
+![Detection: per type, who found it, and your rules](docs/detection-light.png)
+![Settings: setup, one switch per coding agent, mode and exclusions](docs/settings-light.png)
+![Activity: every request, filterable](docs/activity-light.png)
 
 **Privacy.** The app reads sotto's stats feed (`/_sotto/stats`), which carries counts, types and timestamps only: never a value or a placeholder. It finds the proxy through `~/.config/sotto/runtime.json` (written by `sotto claude` and `sotto serve`; port 7788 otherwise). It authenticates with the token in `~/.config/sotto/stats-token` (mode 0600). It talks only to 127.0.0.1, sends no telemetry, and checks for no updates.
 
