@@ -56,7 +56,7 @@ def test_user_rules_mask_even_with_personal_data_off_and_exceptions_win():
     text = "EMP-123456 and EMP-424242"
     spans = p.detect(text)
     assert values(text, spans) == ["123456"] and spans[0].source == "user:Employee ID"
-    assert p.report()["rules"] == [{"rule": "Employee ID", "user": True, "n": 1}]
+    assert p.report()["rules"] == [{"rule": "Employee ID", "user": True, "n": 1, "type": None}]
     assert p.report()["types"]["ACCOUNT"]["masked"] == 1  # the exception is dropped before counting
 
 
@@ -236,3 +236,109 @@ def test_cli_model_on_needs_the_model_downloaded(tmp_path, monkeypatch):
     monkeypatch.setattr(pfserve, "find_model", lambda: tmp_path / "model.gguf")
     monkeypatch.setattr(pfserve, "find_binary", lambda: tmp_path / "pf-serve")
     assert run("model", "on").exit_code == 0 and config_mod.load(path).model is True
+
+
+# --- Built-in rules turned off ([rules] off) ----------------------------------------------
+
+
+def test_a_builtin_rule_turned_off_stops_masking_and_is_reported():
+    p = Pipeline(RulesDetector(), None, pii=True)
+    text = "mobile: 4155552671 and the cache warmer key for prod is a7c3e9f1b5d2c8e04f6a"
+    assert values(text, p.detect(text)) == ["4155552671", "a7c3e9f1b5d2c8e04f6a"]
+    p.apply_settings(off_rules=["phone-labeled", "key-in-prose"])
+    assert p.detect(text) == [] and p.report()["off"] == ["key-in-prose", "phone-labeled"]
+
+
+def test_turning_off_entropy_leaves_named_rules_working():
+    p = Pipeline(RulesDetector(), None)
+    p.apply_settings(off_rules=["entropy"])
+    token = "ghp_" + "Zq8vX2mN4pL7kR9tY3wB6cF1hJ5dG0sAe7Qw"
+    opaque = "Kq8ZxV2mN4pL7rR9tY3wB6cF1hJ5dG"
+    text = f"t={token} blob {opaque}"
+    assert values(text, p.detect(text)) == [token]
+
+
+def test_unknown_builtin_rules_are_config_errors(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[rules]\noff = ["entropy", "luhn"]\n')
+    assert config_mod.load(path).off_rules == ["entropy", "luhn"]
+    path.write_text('[rules]\noff = ["no-such-rule"]\n')
+    with pytest.raises(config_mod.ConfigError, match="no-such-rule"):
+        config_mod.load(path)
+
+
+def test_cli_rules_off_needs_yes_for_secret_rules(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from sotto.cli import app
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = tmp_path / ".config" / "sotto" / "config.toml"
+    run = lambda *a: CliRunner().invoke(app, list(a))
+    assert run("rules", "off", "nope").exit_code == 2
+    assert run("rules", "off", "key-in-prose").exit_code == 2  # finds secrets
+    assert run("rules", "off", "phone-labeled").exit_code == 0
+    assert run("rules", "off", "key-in-prose", "--yes").exit_code == 0
+    assert config_mod.load(path).off_rules == ["phone-labeled", "key-in-prose"]
+    listed = {r["id"]: r for r in json.loads(run("rules", "builtin", "--json").stdout)}
+    assert listed["key-in-prose"] == {"id": "key-in-prose", "type": "SECRET", "on": False} and listed["entropy"]["on"]
+    assert run("rules", "on", "key-in-prose").exit_code == 0
+    assert config_mod.load(path).off_rules == ["phone-labeled"]
+    assert json.loads(run("rules", "list", "--json").stdout)["off"] == ["phone-labeled"]
+
+
+def test_rules_turned_off_apply_while_running(tmp_path):
+    from sotto import launch
+
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text("[detect]\nmodel = false\n")
+    proxy = launch.build_proxy(config_mod.load(cfg_path), upstream="http://up")
+    mock = selftest.MockUpstream()
+    proxy.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock.app), base_url="http://up")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=proxy.app), base_url="http://127.0.0.1:7788")
+    body = {"model": "m", "max_tokens": 8, "messages": [{"role": "user", "content": "run it with --token Xk29fPq7Lm3vR8tZ"}]}
+
+    async def send():
+        await client.post("/v1/messages", json=body)
+
+    anyio.run(send)
+    assert b"Xk29fPq7Lm3vR8tZ" not in mock.received[-1]
+    config_mod.set_value("rules", "off", ["secret-flag"], cfg_path)
+    anyio.run(send)
+    assert b"Xk29fPq7Lm3vR8tZ" in mock.received[-1]
+
+
+class FindsToken(FakeModel):
+    """Finds one fixed secret, like the model would."""
+
+    def detect(self, text):
+        i = text.find("Xk29fPq7Lm3vR8tZ")
+        return [Span(i, i + 16, "SECRET", 0.9, "pf")] if i >= 0 else []
+
+
+def test_a_value_masked_earlier_follows_the_settings():
+    r = Redactor(Pipeline(RulesDetector(), None), Vault(secrets.token_bytes(32)))
+    text = "run it with --token Xk29fPq7Lm3vR8tZ"
+    assert "Xk29fPq7Lm3vR8tZ" not in r.redact_text(text)
+    r.detector.apply_settings(off_rules=["secret-flag"])
+    # Its only detector is off: the conversation resent with it, or the value elsewhere, goes as is.
+    assert r.redact_text(text) == text and r.redact_text("echo Xk29fPq7Lm3vR8tZ") == "echo Xk29fPq7Lm3vR8tZ"
+
+
+def test_a_value_the_model_also_found_stays_masked():
+    r = Redactor(Pipeline(RulesDetector(), FindsToken()), Vault(secrets.token_bytes(32)))
+    assert "Xk29fPq7Lm3vR8tZ" not in r.redact_text("run it with --token Xk29fPq7Lm3vR8tZ")
+    r.detector.apply_settings(off_rules=["secret-flag"])
+    assert "Xk29fPq7Lm3vR8tZ" not in r.redact_text("echo Xk29fPq7Lm3vR8tZ")
+
+
+def test_an_exception_or_a_removed_rule_releases_a_value_masked_earlier():
+    p = Pipeline(RulesDetector(), None, pii=True)
+    r = Redactor(p, Vault(secrets.token_bytes(32)))
+    p.apply_settings(mask_rules=[{"name": "Employee ID", "pattern": r"EMP-\d{6}", "type": "ACCOUNT"}])
+    assert "EMP-123456" not in r.redact_text("badge EMP-123456")
+    p.apply_settings()  # the rule removed
+    assert r.redact_text("badge EMP-123456") == "badge EMP-123456"
+    assert "4155552671" not in r.redact_text("mobile: 4155552671")
+    p.apply_settings(allow_strings=["4155552671"])
+    assert r.redact_text("call 4155552671") == "call 4155552671"

@@ -43,12 +43,13 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
 
     # `rules_only` (--rules-only) holds for this run; otherwise detect.model decides, and can change.
     pipeline = default_pipeline(pii=pii, rules_only=rules_only or not cfg.model, allow_strings=cfg.allow_strings,
-                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
+                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules,
+                                off_rules=cfg.off_rules)
     info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__, "apis": ["messages", "responses"]}
     from .stats import History, Stats
 
     def apply(new) -> None:  # the config file changed: detection settings apply on the next request
-        pipeline.apply_settings(new.pass_types, new.mask_rules, new.allow_strings, new.allow_patterns)
+        pipeline.apply_settings(new.pass_types, new.mask_rules, new.allow_strings, new.allow_patterns, new.off_rules)
         if not rules_only:
             switch.want(new.model)
 

@@ -4,7 +4,14 @@ import Observation
 /// What the detectors did with newly scanned text (the pipeline's report). Counts only.
 struct Detection: Decodable, Sendable {
     struct Stages: Decodable, Sendable { var found = 0, allowed = 0, passed = 0, masked = 0 }
-    struct Rule: Decodable, Sendable, Identifiable { var rule: String; var user: Bool; var n: Int; var id: String { rule } }
+    struct Rule: Decodable, Sendable, Identifiable {
+        var rule: String
+        var user: Bool
+        var n: Int
+        /// A built-in rule's type (SECRET, EMAIL…); nil for your own rules and older services.
+        var type: String?
+        var id: String { rule }
+    }
     var funnel: [String: Int] = [:]
     var types: [String: Stages] = [:]
     var sources: [String: Int] = [:]

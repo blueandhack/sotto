@@ -63,7 +63,8 @@ def _pipeline_or_exit(pii: bool, rules_only: bool, who: str):
     cfg = _config()
     try:
         return default_pipeline(pii=pii or cfg.pii, rules_only=rules_only or not cfg.model, allow_strings=cfg.allow_strings,
-                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
+                                allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules,
+                                off_rules=cfg.off_rules)
     except ModelUnavailable as e:
         typer.echo(f"sotto {who}: {e}", err=True)
         raise typer.Exit(2)
@@ -360,12 +361,14 @@ def types(
         typer.echo("Personal data is off ([detect] pii = false), so personal types are not masked anyway.", err=True)
 
 
-rules_app = typer.Typer(help="Your own rules: patterns always masked, and exceptions never masked.", no_args_is_help=True)
+rules_app = typer.Typer(help="Your own rules (patterns always masked, exceptions never masked), and built-in rules turned off.",
+                        no_args_is_help=True)
 app.add_typer(rules_app, name="rules")
 
 
 def _rules_json(cfg) -> dict:
-    return {"mask": cfg.mask_rules, "allow_strings": cfg.allow_strings, "allow_patterns": cfg.allow_patterns}
+    return {"mask": cfg.mask_rules, "allow_strings": cfg.allow_strings, "allow_patterns": cfg.allow_patterns,
+            "off": cfg.off_rules}
 
 
 @rules_app.command("list")
@@ -383,6 +386,8 @@ def rules_list(as_json: bool = typer.Option(False, "--json", help="Print JSON.")
         typer.echo(f"allow {i}  {v!r}", err=True)
     for i, v in enumerate(cfg.allow_patterns):
         typer.echo(f"allow-pattern {i}  /{v}/", err=True)
+    for r in cfg.off_rules:
+        typer.echo(f"off   {r}  (built-in; `sotto rules on {r}` turns it back on)", err=True)
 
 
 def _save_rules(cfg, section: str, key: str, value) -> None:
@@ -454,6 +459,51 @@ def rules_remove(
         raise typer.Exit(2)
     section, key, items = table[kind]
     _save_rules(cfg, section, key, [x for i, x in enumerate(items) if i != index])
+
+
+@rules_app.command("builtin")
+def rules_builtin(as_json: bool = typer.Option(False, "--json", help="Print JSON.")) -> None:
+    """List the built-in rules and checks, with their type and whether they are on."""
+    import json
+
+    from .detect.rules import builtin_rules
+
+    cfg = _config()
+    rules = [{"id": r, "type": t, "on": r not in cfg.off_rules} for r, t in builtin_rules().items()]
+    if as_json:
+        typer.echo(json.dumps(rules))
+        return
+    for r in rules:
+        typer.echo(f"{'on ' if r['on'] else 'OFF'}  {r['type']:8} {r['id']}", err=True)
+
+
+@rules_app.command("off")
+def rules_off(
+    names: list[str] = typer.Argument(..., help="Built-in rule names, as `sotto rules builtin` lists them."),
+    yes: bool = typer.Option(False, "--yes", help="Confirm turning off a rule that finds secrets."),
+) -> None:
+    """Turn off built-in rules that mask something they should not. Other rules and the local
+    model can still find the same value; for one value, `sotto rules allow` is narrower."""
+    from .detect.rules import builtin_rules
+
+    cfg = _config()
+    unknown = [n for n in names if n not in builtin_rules()]
+    if unknown:
+        typer.echo(f"sotto rules: no built-in rule {unknown[0]!r}; see `sotto rules builtin`", err=True)
+        raise typer.Exit(2)
+    secret = [n for n in names if builtin_rules()[n] == "SECRET"]
+    if secret and not yes:
+        typer.echo(f"sotto rules: {', '.join(secret)} finds secrets; with it off, what only it finds reaches the "
+                   "provider unmasked. Add --yes if you mean it, or `sotto rules allow` one value instead", err=True)
+        raise typer.Exit(2)
+    _save_rules(cfg, "rules", "off", [*cfg.off_rules, *(n for n in dict.fromkeys(names) if n not in cfg.off_rules)])
+
+
+@rules_app.command("on")
+def rules_on(names: list[str] = typer.Argument(..., help="Built-in rule names turned off earlier.")) -> None:
+    """Turn built-in rules back on."""
+    cfg = _config()
+    _save_rules(cfg, "rules", "off", [r for r in cfg.off_rules if r not in names])
 
 
 @app.command()

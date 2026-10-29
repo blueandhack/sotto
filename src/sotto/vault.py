@@ -95,6 +95,7 @@ class Vault:
         self._values: dict[str, str] = {}  # placeholder -> value
         self._placeholders: dict[tuple[str, str], str] = {}  # (type, value) -> placeholder
         self._kinds: dict[str, str] = {}  # value -> type it was first masked as
+        self._sources: dict[str, set[str]] = {}  # value -> the detectors that found it (rules:<id>, user:<name>, pf-serve)
         self._known: re.Pattern[str] | None = None
 
     def __repr__(self) -> str:  # never show values, even in a traceback
@@ -103,7 +104,8 @@ class Vault:
     def __len__(self) -> int:
         return len(self._values)
 
-    def placeholder(self, kind: str, value: str) -> str:
+    def placeholder(self, kind: str, value: str, sources=()) -> str:
+        self._sources.setdefault(value, set()).update(x for x in sources if x and x != "known")
         key = (kind, value)
         if key in self._placeholders:
             return self._placeholders[key]
@@ -135,8 +137,12 @@ class Vault:
     def kind_of(self, value: str) -> str:
         return self._kinds.get(value, "SECRET")
 
+    def sources_of(self, value: str) -> frozenset[str]:
+        return frozenset(self._sources.get(value, ()))
+
     def clear(self) -> None:
         self._values.clear()
         self._placeholders.clear()
         self._kinds.clear()
+        self._sources.clear()
         self._known = None

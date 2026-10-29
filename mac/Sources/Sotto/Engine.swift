@@ -64,6 +64,8 @@ final class Engine {
         var mask: [Mask] = []
         var allowStrings: [String] = []
         var allowPatterns: [String] = []
+        /// Built-in rules turned off (`sotto rules off`).
+        var off: [String] = []
     }
 
     /// A project sent straight to the API, around sotto (`sotto exclude`).
@@ -216,6 +218,11 @@ final class Engine {
         await act { try await self.check(["rules", "allow", value] + (pattern ? ["--pattern"] : [])) }
     }
 
+    /// Turn a built-in rule off, or back on. Rules that find secrets need `confirmed`.
+    func setRuleOff(_ rule: String, _ off: Bool, confirmed: Bool = false) async {
+        await act { try await self.check(["rules", off ? "off" : "on", rule] + (confirmed ? ["--yes"] : [])) }
+    }
+
     /// kind: mask, allow or allow-pattern; index as `sotto rules list` numbers them.
     func removeRule(_ kind: String, _ index: Int) async {
         await act { try await self.check(["rules", "remove", kind, String(index)]) }
@@ -311,7 +318,7 @@ final class Engine {
                           excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)],
                           pii: true, pass: ["PERSON", "DATE"],
                           rules: .init(mask: [.init(name: "Employee ID", pattern: "EMP-\\d{6}", type: "ACCOUNT")],
-                                       allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"]),
+                                       allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"], off: ["phone-labeled"]),
                           clients: ["codex": .init(installed: true, on: true), "pi": .init(installed: true, on: false)])
         e.serviceStatus = .enabled
         return e

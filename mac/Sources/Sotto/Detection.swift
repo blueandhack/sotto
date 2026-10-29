@@ -19,8 +19,8 @@ struct DetectionPage: View {
                         SourceBars(sources: d.sources)
                     }
                     .fixedSize(horizontal: false, vertical: true)
-                    Card(title: "Top rules", subtitle: "Masked values per rule; yours are marked") {
-                        RuleList(rules: d.rules)
+                    Card(title: "Top rules", subtitle: "Masked values per rule; turn off a built-in rule that masks what it should not") {
+                        RuleList(rules: d.rules, engine: engine)
                     }
                 }
                 .frame(width: 330)
@@ -136,14 +136,20 @@ private struct SourceBars: View {
 
 private struct RuleList: View {
     var rules: [Detection.Rule]
+    var engine: Engine
+    /// A rule that finds secrets, waiting for confirmation before it is turned off.
+    @State private var confirming: String?
+
+    private var off: [String] { engine.status?.rules?.off ?? [] }
 
     var body: some View {
         VStack(spacing: 0) {
-            if rules.isEmpty {
+            let shown = rules.filter { !off.contains($0.rule) || $0.user }
+            if shown.isEmpty {
                 Text("No rule has masked anything yet").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            ForEach(rules) { r in
+            ForEach(shown) { r in
                 HStack(spacing: 8) {
                     Text(r.rule).font(.system(size: 12, design: r.user ? .default : .monospaced)).foregroundStyle(Theme.text).lineLimit(1)
                     if r.user {
@@ -152,10 +158,41 @@ private struct RuleList: View {
                     }
                     Spacer()
                     Text(r.n.compact).font(.system(size: 12)).monospacedDigit().foregroundStyle(Theme.secondary)
+                    if !r.user {
+                        Button {
+                            if r.type == "SECRET" || r.type == nil { confirming = r.rule } else { Task { await engine.setRuleOff(r.rule, true) } }
+                        } label: {
+                            Image(systemName: "nosign").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Theme.secondary)
+                        }
+                        .buttonStyle(.plain).disabled(!engine.isBundled || engine.busy)
+                        .help("Turn off this built-in rule").accessibilityLabel("Turn off \(r.rule)")
+                    }
                 }
                 .padding(.vertical, 5)
             }
+            if !off.isEmpty {
+                Text("Turned off").font(.system(size: 11, weight: .medium)).foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 10).padding(.bottom, 2)
+                ForEach(off, id: \.self) { rule in
+                    HStack(spacing: 8) {
+                        Text(rule).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary).strikethrough().lineLimit(1)
+                        Spacer()
+                        PillButton(title: "Turn on") { Task { await engine.setRuleOff(rule, false) } }
+                            .disabled(!engine.isBundled || engine.busy)
+                    }
+                    .padding(.vertical, 3)
+                }
+            }
             Spacer(minLength: 0)
+        }
+        .alert("Turn off \(confirming ?? "this rule")?", isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })) {
+            Button("Keep it on", role: .cancel) { confirming = nil }
+            Button("Turn off", role: .destructive) {
+                if let rule = confirming { Task { await engine.setRuleOff(rule, true, confirmed: true) } }
+                confirming = nil
+            }
+        } message: {
+            Text("This rule finds secrets. With it off, what only it finds reaches the model provider as it is; other rules and the local model still apply. To let one value through, add an exception instead.")
         }
     }
 }

@@ -125,23 +125,40 @@ class Pipeline:
 
     # --- Settings from the config, applied while running -------------------------------
 
-    def apply_settings(self, pass_types=(), mask_rules=(), allow_strings=(), allow_patterns=()) -> None:
-        """Types never masked, your own rules, your allowlist. Bumps `generation` so cached
-        detections (the redactor's) are dropped."""
+    def apply_settings(self, pass_types=(), mask_rules=(), allow_strings=(), allow_patterns=(), off_rules=()) -> None:
+        """Types never masked, your own rules, your allowlist, built-in rules turned off. Bumps
+        `generation` so cached detections (the redactor's) are dropped."""
         self.pass_types = frozenset(pass_types)
         if self.rules:
             self.rules.set_user_rules(list(mask_rules))
             self.rules.allowlist.set_user(allow_strings, allow_patterns)
+            self.rules.off = frozenset(off_rules)
         self.generation += 1
+
+    def lets_through(self, value: str, sources: frozenset[str]) -> bool:
+        """A value masked earlier that the settings now let through: it has an exception, or every
+        detector that found it is turned off ([rules] off) or was your own rule and is gone."""
+        if self.allowlist and self.allowlist.allows(value):
+            return True
+        if not self.rules or not sources:
+            return False
+        off = {f"rules:{r}" for r in self.rules.off}
+        mine = {f"user:{r.id}" for r in self.rules.user_rules}
+        return all(x in off or (x.startswith("user:") and x not in mine) for x in sources)
 
     def report(self) -> dict:
         """Counts for the stats feed: the funnel, then per type and per detector. Never values."""
         from . import TYPES
 
         types = {t: {stage: self.by_type[(t, stage)] for stage in ("found", "allowed", "passed", "masked")} for t in TYPES}
-        top = [{"rule": k.split(":", 1)[1], "user": k.startswith("user:"), "n": n} for k, n in self.by_rule.most_common(8)]
+        from .rules import builtin_rules
+
+        top = [{"rule": k.split(":", 1)[1], "user": k.startswith("user:"), "n": n,
+                "type": None if k.startswith("user:") else builtin_rules().get(k.split(":", 1)[1])}
+               for k, n in self.by_rule.most_common(8)]
         out = {**self.funnel, "types": types, "sources": dict(self.by_source), "rules": top,
-               "pass": sorted(self.pass_types), "model": self.pf is not None}
+               "pass": sorted(self.pass_types), "off": sorted(self.rules.off) if self.rules else [],
+               "model": self.pf is not None}
         if self.model_error:
             out["model_error"] = self.model_error
         return out
@@ -280,10 +297,10 @@ def load_model():
 
 
 def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=(), allow_patterns=(),
-                     pass_types=(), mask_rules=()) -> Pipeline:
+                     pass_types=(), mask_rules=(), off_rules=()) -> Pipeline:
     """The v1 pipeline: the rules, then the model unless `rules_only` (detect.model = false)."""
     p = Pipeline(RulesDetector(), None if rules_only else load_model(), pii=pii)
-    p.apply_settings(pass_types, mask_rules, allow_strings, allow_patterns)
+    p.apply_settings(pass_types, mask_rules, allow_strings, allow_patterns, off_rules)
     return p
 
 

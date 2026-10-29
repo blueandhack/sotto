@@ -73,8 +73,10 @@ class Redactor:
         known = self.vault.known_values()
         if known is not None:
             passed = getattr(self.detector, "pass_types", frozenset())
+            released = getattr(self.detector, "lets_through", None)
             spans += [Span(m.start(), m.end(), kind, 1.0, "known") for m in known.finditer(text)
-                      if (kind := self.vault.kind_of(m.group())) not in passed]
+                      if (kind := self.vault.kind_of(m.group())) not in passed
+                      and not (released and released(m.group(), self.vault.sources_of(m.group())))]
         return merge(spans), seen
 
     def redact_text(self, text: str) -> str:
@@ -88,7 +90,7 @@ class Redactor:
         out, pos = [], 0
         for s in spans:
             out.append(text[pos : s.start])
-            out.append(self.vault.placeholder(s.type, text[s.start : s.end]))
+            out.append(self.vault.placeholder(s.type, text[s.start : s.end], s.source.split("|")))
             self.counts[s.type] += 1
             pos = s.end
         out.append(text[pos:])

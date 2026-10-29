@@ -12,6 +12,7 @@
 
     [rules]                # your own patterns, always masked (Python regex; group 1 if present)
     mask = [{ name = "Employee ID", pattern = "EMP-\\d{6}", type = "ACCOUNT" }]
+    off = []               # built-in rules turned off, by name, e.g. ["key-in-prose"] (`sotto rules builtin`)
 
     [allowlist]            # added to the built-in allowlist, never replacing it
     strings = []
@@ -40,7 +41,7 @@ _SCHEMA = {
     "server": {"port": int, "upstream": str},
     "detect": {"pii": bool, "model": bool, "observe": bool, "pass": list},
     "allowlist": {"strings": list, "patterns": list},
-    "rules": {"mask": list},
+    "rules": {"mask": list, "off": list},
     "log": {"level": str},
 }
 LOG_LEVELS = ("debug", "info", "warning", "error")
@@ -59,6 +60,7 @@ class Config:
     observe: bool = False
     pass_types: list[str] = field(default_factory=list)
     mask_rules: list[dict] = field(default_factory=list)
+    off_rules: list[str] = field(default_factory=list)
     allow_strings: list[str] = field(default_factory=list)
     allow_patterns: list[str] = field(default_factory=list)
     restore: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_POLICY))
@@ -121,6 +123,12 @@ def load(path: Path | None = None) -> Config:
         except re.error as e:
             raise ConfigError(f"{path}: rules.mask[{i}] pattern: {e}") from e
         cfg.mask_rules.append({"name": str(rule.get("name") or f"rule {i + 1}"), "pattern": rule["pattern"], "type": kind})
+    from .detect.rules import builtin_rules
+
+    cfg.off_rules = [str(r) for r in rules.get("off", [])]
+    for r in cfg.off_rules:
+        if r not in builtin_rules():
+            raise ConfigError(f"{path}: rules.off: no built-in rule {r!r} (`sotto rules builtin` lists them)")
     cfg.allow_strings = [str(s) for s in allow.get("strings", [])]
     cfg.allow_patterns = [str(p) for p in allow.get("patterns", [])]
     for p in cfg.allow_patterns:

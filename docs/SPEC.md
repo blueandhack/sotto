@@ -184,7 +184,7 @@ The user experience is one command, `sotto claude` or `sotto codex`, or the Mac 
 | `sotto protect on\|off\|status [--client]` | Points Claude Code, Codex, pi and opencode at `sotto serve` in their own config files, or undoes it. |
 | `sotto observe on\|off` | Observe only: scan and count, but forward requests unchanged. |
 | `sotto model on\|off` | The rules and the local model, or the rules alone. |
-| `sotto types` / `sotto rules` | What gets masked: types passed through, your own mask rules, exceptions. |
+| `sotto types` / `sotto rules` | What gets masked: types passed through, your own mask rules, exceptions, built-in rules turned off. |
 | `sotto exclude` / `sotto include` | Lets one project's Claude Code skip sotto. |
 | `sotto status` | Setup, protection and settings as JSON, for the Mac app. |
 | `sotto scan <file or ->` | Prints findings with values masked; exits 1 if anything is found. Usable as a pre-commit hook. |
@@ -207,6 +207,7 @@ pass = []            # types never masked, e.g. ["PERSON"]
 
 [rules]              # the user's own patterns, always masked
 mask = []            # [{ name, pattern, type }]
+off = []             # built-in rule names turned off (`sotto rules builtin`)
 
 [allowlist]          # added to the built-in allowlist, never replacing it
 strings = []
@@ -269,6 +270,7 @@ sotto/
 - [x] **Codex and pi (Oct 27, 2026).** The proxy routes by path prefix: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT (Codex's subscription backend) under `/chatgpt/`. The Responses API is scanned like the Messages API: `instructions`, message text, `function_call` arguments (values, not keys) and tool outputs; reasoning items pass through. Replies are restored whole and as streams (`response.output_text.delta` tail buffer, tool-call arguments held until `.done`). zstd and gzip request bodies are decoded; other encodings and WebSocket upgrades are refused. Verified with Codex 0.147 against chatgpt.com: the request carried placeholders only and the shell command ran with the real value. `sotto codex` for one run, `sotto protect` for Codex's config.toml and pi's models.json; clients are named by an `x-sotto-client` header the proxy strips.
 - [x] **opencode (Oct 29, 2026).** `sotto protect` sets `provider.anthropic` and `provider.openai` `options.baseURL` in `~/.config/opencode/opencode.json` (the 1.x shape, which 2.x migrates). opencode keeps one OpenAI base URL for both logins, so an `/openai/v1` request that carries `chatgpt-account-id` is routed to chatgpt.com; scanned bodies sent there are zstd-compressed, since that backend refuses large uncompressed ones. An upgrade request that arrives as plain HTTP (uvicorn without a WebSocket library) is refused, not forwarded. Verified with opencode 2.2.1 (`opencode run`) against a local stand-in for both providers: 8 requests, including session titles, carried placeholders only, the replies showed the real value, and the WebSocket attempt fell back to HTTPS. A plugin was ruled out: plugin load errors are swallowed and `--pure` skips plugins, so protection would vanish silently, and no hook sees model output before it becomes a tool call. opencode 1.x with a ChatGPT login is not covered and is reported.
 - [x] **More rules, and the rules without the model (Oct 29, 2026).** 69 more L1 rules (96): 52 provider formats from gitleaks and TruffleHog, 11 for secrets in flags, config files and sentences, and 6 for personal data (emails, phones, SSNs, dates of birth). `detect.model = false` runs L1 alone and switches while running. Measured on dev and a new held-out set written before the rules (`bench/results/RULES.md`): with the rules alone, secret recall went from 0.78 to 0.99 and personal-data recall from 0.39 to 0.77, at precision 0.996, with no hard negative flagged; the earlier held-out sets flag exactly what they flagged before.
+- [x] **Built-in rules turned off (Oct 29, 2026).** `[rules] off` (`sotto rules off|on`, the Detection page's Top rules) turns off a rule or check by name; rules that find secrets need `--yes` or a confirmation. The vault records which detectors found each value, so the known-values pass lets a value masked earlier go once every detector that found it is off or was your own rule and is gone, or the value has an exception. Before this, an exception added mid-session did not unmask a value already masked.
 - [ ] **M6 Ship.** README, Homebrew tap, name check on GitHub, PyPI and Homebrew. *Oct 26, 2026: Sotto.app is self-contained (bundled Python runtime, pf-serve, a LaunchAgent via SMAppService) and sets itself up: model download, background service, `sotto protect`. Left: Developer ID signing and notarization, a DMG, a Homebrew cask, updates, and Windows (pf-serve already builds there; the app would need its own UI).*
 
 ## Testing, safety rules, risks

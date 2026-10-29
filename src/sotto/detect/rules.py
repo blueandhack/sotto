@@ -7,12 +7,22 @@ import re
 import tomllib
 from collections import Counter
 from dataclasses import dataclass
+from functools import cache
 from importlib import resources
 from pathlib import Path
 
 from . import Span
 
 SOURCE = "rules"
+# Checks that are not regex rules, by the name they report (rules:entropy) and their type.
+CHECKS = {"entropy": "SECRET", "luhn": "ACCOUNT", "iban": "ACCOUNT"}
+
+
+@cache
+def builtin_rules() -> dict[str, str]:
+    """Every built-in rule and check that can be turned off ([rules] off), with its type."""
+    raw = tomllib.loads(resources.files("sotto.detect").joinpath("rules.toml").read_text())
+    return {**{r["id"]: r.get("type", "SECRET") for r in raw.get("rule", [])}, **CHECKS}
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +152,7 @@ class RulesDetector:
         self.luhn = cfg.get("luhn", {"enabled": False})
         self.iban = cfg.get("iban", {"enabled": False})
         self.user_rules: list[Rule] = []
+        self.off: frozenset[str] = frozenset()  # built-in rules and checks turned off ([rules] off)
 
     def set_user_rules(self, rules: list[dict]) -> None:
         """Your own patterns ([rules] mask): always masked, never filtered as placeholders.
@@ -165,7 +176,7 @@ class RulesDetector:
         lowered = text.lower()
         spans: list[Span] = []
         for rule in self.rules + self.user_rules:
-            if not personal and rule.type != "SECRET" and not rule.user:
+            if not rule.user and (rule.id in self.off or not personal and rule.type != "SECRET"):
                 continue
             if rule.keywords and not any(k in lowered for k in rule.keywords):
                 continue
@@ -181,11 +192,11 @@ class RulesDetector:
                 if rule.min_classes and char_classes(m.group(rule.group)) < rule.min_classes:
                     continue
                 spans.append(Span(start, end, rule.type, rule.confidence, f"user:{rule.id}" if rule.user else f"{SOURCE}:{rule.id}"))
-        if self.entropy.get("enabled"):
+        if self.entropy.get("enabled") and "entropy" not in self.off:
             spans.extend(self._entropy_spans(text))
-        if personal and self.luhn.get("enabled"):
+        if personal and self.luhn.get("enabled") and "luhn" not in self.off:
             spans.extend(self._card_spans(text))
-        if personal and self.iban.get("enabled"):
+        if personal and self.iban.get("enabled") and "iban" not in self.off:
             spans.extend(self._iban_spans(text))
         return self.allowlist.filter(text, spans)
 
