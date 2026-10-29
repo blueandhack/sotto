@@ -1,4 +1,4 @@
-"""Point Codex and pi at sotto (`sotto protect`), and run Codex through it once (`sotto codex`).
+"""Point Codex, pi and opencode at sotto (`sotto protect`), and run Codex through it once (`sotto codex`).
 
 Verified Oct 27, 2026 against Codex 0.147 and pi 0.84:
 
@@ -11,7 +11,19 @@ Verified Oct 27, 2026 against Codex 0.147 and pi 0.84:
 - pi overrides a built-in provider's base URL in ~/.pi/agent/models.json
   (PI_CODING_AGENT_DIR respected). sotto sets it for anthropic, openai and openai-codex.
 
-Both get an `x-sotto-client` header, so the dashboard can tell clients apart; the proxy drops
+Verified Oct 29, 2026 against opencode 1.19.5 and 2.2.1 (source):
+
+- opencode merges global config.json, opencode.json, then opencode.jsonc from
+  $XDG_CONFIG_HOME/opencode (default ~/.config/opencode), later files winning key by key.
+  sotto writes `provider.<id>.options.baseURL` and `headers` into opencode.json, the 1.x shape
+  that 2.x still reads, for anthropic and openai; their SDKs then call {base}/v1/messages and
+  {base}/openai/v1/responses. An opencode.jsonc or a 2.x `providers` entry that sets its own
+  base URL wins and is reported, never edited. sotto edits only a plain-JSON opencode.json.
+- A ChatGPT login in 2.x keeps the configured base URL and sends `chatgpt-account-id`, which
+  the proxy routes to chatgpt.com. 1.x replaces the URL with chatgpt.com itself, so its OpenAI
+  traffic never reaches sotto; status says so instead of claiming it is covered.
+
+All three get an `x-sotto-client` header, so the dashboard can tell clients apart; the proxy drops
 it before forwarding. Only what sotto added is ever removed, and a different base URL the user
 already set is left alone and reported.
 """
@@ -21,6 +33,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -217,9 +231,176 @@ def pi_disable(port: int) -> dict:
     return pi_status(port)
 
 
+# --- opencode -----------------------------------------------------------------------
+
+OPENCODE_FILES = ("config.json", "opencode.json", "opencode.jsonc")  # merge order: later wins
+
+
+def opencode_dir() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "opencode"
+
+
+def opencode_providers(port: int) -> dict[str, str]:
+    base = sotto_url(port)
+    return {"anthropic": f"{base}/v1", "openai": f"{base}/openai/v1"}
+
+
+def _jsonc(text: str):
+    """JSON with // and /* */ comments and trailing commas, as opencode reads it."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = n if end < 0 else end + 2
+        else:
+            out.append(c)
+            i += 1
+    return json.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(out)))
+
+
+def _opencode_base(data: dict, provider: str):
+    """The base URL one config file sets for a provider: 1.x `provider` or 2.x `providers`."""
+    v1 = ((data.get("provider") or {}).get(provider) or {})
+    v2 = ((data.get("providers") or {}).get(provider) or {})
+    url = ((v2.get("settings") or {}) if isinstance(v2, dict) else {}).get("baseURL")
+    if url is None and isinstance(v1, dict):
+        url = (v1.get("options") or {}).get("baseURL") or v1.get("api")
+    return url
+
+
+def _opencode_effective(port: int) -> dict[str, str | None]:
+    """Each provider's base URL after opencode merges its global files."""
+    urls = {p: None for p in opencode_providers(port)}
+    for name in OPENCODE_FILES:
+        path = opencode_dir() / name
+        if not path.exists():
+            continue
+        try:
+            data = _jsonc(path.read_text())
+        except ValueError as e:
+            raise ProtectError(f"{path} is not valid JSON ({e}); fix it first") from e
+        if not isinstance(data, dict):
+            raise ProtectError(f"{path} does not hold a config object")
+        for p in urls:
+            url = _opencode_base(data, p)
+            if url is not None:
+                urls[p] = url
+    return urls
+
+
+_version_cache: dict = {}
+
+
+def opencode_major() -> int | None:
+    """opencode's major version, from `opencode --version`, cached per binary."""
+    exe = shutil.which("opencode")
+    if not exe:
+        return None
+    try:
+        key = (exe, os.stat(exe).st_mtime)
+        if key not in _version_cache:
+            out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=5).stdout
+            found = re.search(r"(\d+)\.\d+", out)
+            _version_cache.clear()
+            _version_cache[key] = int(found.group(1)) if found else None
+        return _version_cache[key]
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _opencode_chatgpt_login() -> bool:
+    data_home = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    try:
+        auth = json.loads((data_home / "opencode" / "auth.json").read_text())
+    except (OSError, ValueError):
+        return False
+    return isinstance(auth, dict) and (auth.get("openai") or {}).get("type") == "oauth"
+
+
+def opencode_status(port: int) -> dict:
+    folder = opencode_dir()
+    if not any((folder / n).exists() for n in OPENCODE_FILES) and not shutil.which("opencode"):
+        return {"installed": False, "on": False}
+    try:
+        urls = _opencode_effective(port)
+    except ProtectError as e:
+        return {"installed": True, "on": False, "error": str(e)}
+    want = opencode_providers(port)
+    ours = sorted(p for p, url in want.items() if urls[p] == url)
+    others = sorted(p for p in want if p not in ours and urls[p])
+    out = {"installed": True, "on": bool(ours), "providers": ours, "config": str(folder / "opencode.json"),
+           **({"other": others} if others else {})}
+    if "openai" in ours and opencode_major() == 1 and _opencode_chatgpt_login():
+        out["warning"] = "opencode 1.x sends a ChatGPT login straight to chatgpt.com, around sotto; update to 2.x"
+    return out
+
+
+def opencode_enable(port: int) -> dict:
+    path = opencode_dir() / "opencode.json"
+    urls = _opencode_effective(port)
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {"$schema": "https://opencode.ai/config.json"}
+    except ValueError as e:
+        raise ProtectError(f"{path} has comments or is not plain JSON; sotto will not rewrite it") from e
+    providers = data.setdefault("provider", {})
+    if not isinstance(providers, dict):
+        raise ProtectError(f"{path}: provider is not an object")
+    for name, url in opencode_providers(port).items():
+        if urls[name] not in (None, url):
+            continue  # the user's own gateway for this provider: left alone, reported by status
+        entry = providers.setdefault(name, {})
+        options = entry.setdefault("options", {})
+        options["baseURL"] = url
+        options.setdefault("headers", {})["x-sotto-client"] = "opencode"
+    _write(path, data)
+    return opencode_status(port)
+
+
+def opencode_disable(port: int) -> dict:
+    path = opencode_dir() / "opencode.json"
+    if not path.exists():
+        return opencode_status(port)
+    try:
+        data = json.loads(path.read_text())
+    except ValueError as e:
+        raise ProtectError(f"{path} has comments or is not plain JSON; sotto will not rewrite it") from e
+    providers = data.get("provider") or {}
+    changed = False
+    for name, url in opencode_providers(port).items():
+        entry = providers.get(name)
+        options = entry.get("options") if isinstance(entry, dict) else None
+        if not isinstance(options, dict) or options.get("baseURL") != url:
+            continue
+        options.pop("baseURL")
+        headers = options.get("headers") or {}
+        headers.pop("x-sotto-client", None)
+        if not headers:
+            options.pop("headers", None)
+        if not options:
+            entry.pop("options")
+        if not entry:
+            providers.pop(name)
+        changed = True
+    if changed:
+        if not providers:
+            data.pop("provider", None)
+        _write(path, data)
+    return opencode_status(port)
+
+
 # --- All clients ----------------------------------------------------------------------
 
-CLIENTS = ("claude", "codex", "pi")
+CLIENTS = ("claude", "codex", "pi", "opencode")
 
 
 def protect_clients(action: str, port: int, only: list[str] | None = None) -> dict[str, dict]:
@@ -234,6 +415,8 @@ def protect_clients(action: str, port: int, only: list[str] | None = None) -> di
         "claude": {"on": lambda: claude(protect.enable), "off": lambda: claude(protect.disable), "status": lambda: claude(protect.status)},
         "codex": {"on": lambda: codex_enable(port), "off": lambda: codex_disable(port), "status": lambda: codex_status(port)},
         "pi": {"on": lambda: pi_enable(port), "off": lambda: pi_disable(port), "status": lambda: pi_status(port)},
+        "opencode": {"on": lambda: opencode_enable(port), "off": lambda: opencode_disable(port),
+                     "status": lambda: opencode_status(port)},
     }
     out = {}
     for name in only or CLIENTS:

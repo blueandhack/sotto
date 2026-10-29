@@ -1,10 +1,10 @@
 # sotto — Local Secret & PII Redaction for Coding Agents (Build Spec)
 
-Oct 25, 2026 · @Yujia Lin · updated Oct 27, 2026 for Codex and pi, pf-serve, and the Mac app
+Oct 25, 2026 · @Yujia Lin · updated Oct 29, 2026 for Codex, pi and opencode, pf-serve, and the Mac app
 
 ## Summary
 
-sotto is a local proxy that removes secrets and personal data from coding-agent requests (Claude Code, Codex, pi) before they leave the Mac, then restores the real values locally. Nothing is sent to any third party: detection runs fully on-device. The name comes from *sotto voce*, "in a low voice."
+sotto is a local proxy that removes secrets and personal data from coding-agent requests (Claude Code, Codex, pi, opencode) before they leave the Mac, then restores the real values locally. Nothing is sent to any third party: detection runs fully on-device. The name comes from *sotto voce*, "in a low voice."
 
 Build order: **Phase 0 is a benchmark** that measures which detectors are fast and accurate enough. The real proxy is built only after those numbers are in.
 
@@ -29,7 +29,7 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 
 **Non-goals (v1)**
 
-- ~~Other AI clients (Codex, Cursor, Gemini CLI).~~ Codex and pi were added on Oct 27, 2026 (Milestones). Cursor and Gemini CLI remain out of scope.
+- ~~Other AI clients (Codex, Cursor, Gemini CLI).~~ Codex and pi were added on Oct 27, 2026, opencode on Oct 29 (Milestones). Cursor and Gemini CLI remain out of scope.
 - Linux, Windows, or Intel Macs.
 - Compliance certification. sotto is a safety layer, not an anonymization guarantee.
 - Rewriting Claude Code's local transcript files.
@@ -47,7 +47,7 @@ The goal is a one-command tool: `sotto claude` starts Claude Code with every req
 
 ## Architecture
 
-sotto is a local HTTP proxy: each coding agent talks to it through its base-URL setting (Claude Code's `ANTHROPIC_BASE_URL`, a `sotto` model provider in Codex, pi's `models.json`), and it is the only thing that talks to the providers. It routes by path: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT under `/chatgpt/`.
+sotto is a local HTTP proxy: each coding agent talks to it through its base-URL setting (Claude Code's `ANTHROPIC_BASE_URL`, a `sotto` model provider in Codex, pi's `models.json`, opencode's `opencode.json`), and it is the only thing that talks to the providers. It routes by path: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT under `/chatgpt/`.
 
 &#91;embedded content: sotto architecture · request and response paths\]
 
@@ -179,7 +179,7 @@ The user experience is one command, `sotto claude` or `sotto codex`, or the Mac 
 | `sotto claude [args]` | Starts the proxy on a free local port, runs `claude` with `ANTHROPIC_BASE_URL` pointing at it, stops the proxy when Claude exits. Passes all args through. |
 | `sotto codex [args]` | The same for Codex, with `-c` overrides for that run (a `sotto` provider, WebSockets off). |
 | `sotto serve` | Runs the proxy standalone on `127.0.0.1:7788` (configurable). Binds to localhost only. |
-| `sotto protect on\|off\|status [--client]` | Points Claude Code, Codex and pi at `sotto serve` in their own config files, or undoes it. |
+| `sotto protect on\|off\|status [--client]` | Points Claude Code, Codex, pi and opencode at `sotto serve` in their own config files, or undoes it. |
 | `sotto observe on\|off` | Observe only: scan and count, but forward requests unchanged. |
 | `sotto types` / `sotto rules` | What gets masked: types passed through, your own mask rules, exceptions. |
 | `sotto exclude` / `sotto include` | Lets one project's Claude Code skip sotto. |
@@ -238,7 +238,7 @@ sotto/
     vault.py        # in-memory map, HMAC ids, install salt
     stats.py        # counts-only stats feed, history file, flow totals
     protect.py      # Claude Code settings, project exclusions
-    clients.py      # Codex and pi configs, `sotto codex`
+    clients.py      # Codex, pi and opencode configs, `sotto codex`
     launch.py       # `sotto claude`, the VS Code wrapper, background server
     detect/
       rules.py      # L1 regex + entropy + checksums, user rules
@@ -263,6 +263,7 @@ sotto/
 - [ ] **M4.5 Secret classifier — on hold (Oct 25, 2026).** A small encoder that labels candidate spans as credential, identifier, placeholder or personal data, replacing hand-written refinement as the main filter for false positives. The trigger is fresh held-out set 2: 9 of 15 hard negatives were flagged, each a new identifier shape. Candidate data: Samsung CredData (Apache-2.0) plus synthetic positives and harvested public identifiers. Never train on the hand-written negative sets.
 - [x] **M5 Mac app.** *Done Oct 27, 2026: a menu-bar app and dashboard that bundles the engine, runs it as a LaunchAgent and sets itself up; flow diagrams per agent and provider, Detection with per-type switches and user rules, a persistent request history, observe mode. Signing and the Homebrew cask moved to M6.* Original plan: a SwiftUI menu-bar app with a dashboard window and Swift Charts. It shows a live flow diagram (Claude Code → sotto → Anthropic) with counts, redactions over time by type, restores, fail-closed blocks, detection latency and model health, plus start/stop and a PII toggle. It reads M2's stats feed over a local socket guarded by a 0600 token file. It never receives a sensitive value, sends no telemetry and checks for no updates. Signed with Developer ID and notarized; ships as a Homebrew cask.
 - [x] **Codex and pi (Oct 27, 2026).** The proxy routes by path prefix: Anthropic at the root, the OpenAI API under `/openai/`, ChatGPT (Codex's subscription backend) under `/chatgpt/`. The Responses API is scanned like the Messages API: `instructions`, message text, `function_call` arguments (values, not keys) and tool outputs; reasoning items pass through. Replies are restored whole and as streams (`response.output_text.delta` tail buffer, tool-call arguments held until `.done`). zstd and gzip request bodies are decoded; other encodings and WebSocket upgrades are refused. Verified with Codex 0.147 against chatgpt.com: the request carried placeholders only and the shell command ran with the real value. `sotto codex` for one run, `sotto protect` for Codex's config.toml and pi's models.json; clients are named by an `x-sotto-client` header the proxy strips.
+- [x] **opencode (Oct 29, 2026).** `sotto protect` sets `provider.anthropic` and `provider.openai` `options.baseURL` in `~/.config/opencode/opencode.json` (the 1.x shape, which 2.x migrates). opencode keeps one OpenAI base URL for both logins, so an `/openai/v1` request that carries `chatgpt-account-id` is routed to chatgpt.com; scanned bodies sent there are zstd-compressed, since that backend refuses large uncompressed ones. An upgrade request that arrives as plain HTTP (uvicorn without a WebSocket library) is refused, not forwarded. Verified with opencode 2.2.1 (`opencode run`) against a local stand-in for both providers: 8 requests, including session titles, carried placeholders only, the replies showed the real value, and the WebSocket attempt fell back to HTTPS. A plugin was ruled out: plugin load errors are swallowed and `--pure` skips plugins, so protection would vanish silently, and no hook sees model output before it becomes a tool call. opencode 1.x with a ChatGPT login is not covered and is reported.
 - [ ] **M6 Ship.** README, Homebrew tap, name check on GitHub, PyPI and Homebrew. *Oct 26, 2026: Sotto.app is self-contained (bundled Python runtime, pf-serve, a LaunchAgent via SMAppService) and sets itself up: model download, background service, `sotto protect`. Left: Developer ID signing and notarization, a DMG, a Homebrew cask, updates, and Windows (pf-serve already builds there; the app would need its own UI).*
 
 ## Testing, safety rules, risks

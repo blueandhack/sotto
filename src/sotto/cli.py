@@ -226,23 +226,23 @@ def setup() -> None:
 @app.command()
 def protect(
     action: str = typer.Argument("status", help="on, off, or status"),
-    client: list[str] = typer.Option(None, "--client", help="claude, codex or pi (default: every one installed)."),
+    client: list[str] = typer.Option(None, "--client", help="claude, codex, pi or opencode (default: every one installed)."),
     as_json: bool = typer.Option(False, "--json", help="Print status as JSON."),
 ) -> None:
-    """Send every Claude Code, Codex and pi session through `sotto serve` (on), stop (off), or show which."""
+    """Send every Claude Code, Codex, pi and opencode session through `sotto serve` (on), stop (off), or show which."""
     import json
 
     from .clients import CLIENTS, protect_clients
 
     cfg = _config()
     if action not in ("on", "off", "status") or any(c not in CLIENTS for c in client or []):
-        typer.echo("sotto protect: use on, off or status, and --client claude|codex|pi", err=True)
+        typer.echo("sotto protect: use on, off or status, and --client claude|codex|pi|opencode", err=True)
         raise typer.Exit(2)
     result = protect_clients(action, cfg.port, client or None)
     if as_json:
         typer.echo(json.dumps(result))
         return
-    names = {"claude": "Claude Code", "codex": "Codex", "pi": "pi"}
+    names = {"claude": "Claude Code", "codex": "Codex", "pi": "pi", "opencode": "opencode"}
     for name, st in result.items():
         if not st.get("installed"):
             line = "not installed"
@@ -251,10 +251,14 @@ def protect(
         elif st.get("on"):
             line = "on: goes through sotto" + (f" ({', '.join(st['providers'])})" if st.get("providers") else "")
         else:
-            line = "off" + (f": already uses {st['other']}, left alone" if st.get("other") else "")
+            other = st.get("other")
+            other = ", ".join(other) if isinstance(other, list) else other
+            line = "off" + (f": already uses {other}, left alone" if other else "")
         typer.echo(f"{names[name]:12} {line}", err=True)
+        if st.get("warning"):
+            typer.echo(f"{'':12} warning: {st['warning']}", err=True)
     if action == "on":
-        typer.echo("Claude Code sessions switch now; Codex and pi pick it up when they next start.", err=True)
+        typer.echo("Claude Code sessions switch now; Codex, pi and opencode pick it up when they next start.", err=True)
     elif action == "off":
         typer.echo("Sessions already running keep using sotto until they restart.", err=True)
     if any(st.get("error") for st in result.values()):

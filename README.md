@@ -2,9 +2,9 @@
 
 <h1 align="center">sotto</h1>
 
-<p align="center"><b>Keep secrets and personal data on your Mac while you use Claude Code, Codex or pi.</b></p>
+<p align="center"><b>Keep secrets and personal data on your Mac while you use Claude Code, Codex, pi or opencode.</b></p>
 
-sotto is a local proxy that sits between your coding agent (Claude Code, Codex or pi) and its model provider (Anthropic or OpenAI). Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When the model answers, sotto puts the real values back, so your agent can still edit your `.env` file correctly, but the provider never sees what is in it.
+sotto is a local proxy that sits between your coding agent (Claude Code, Codex, pi or opencode) and its model provider (Anthropic or OpenAI). Before a request leaves your Mac, it finds secrets (API keys, tokens, passwords, private keys, connection strings) and, if you want, personal data (names, emails, phones, addresses, account numbers), and replaces each one with a placeholder such as `SOTTO_SECRET_7f3a9c2e`. When the model answers, sotto puts the real values back, so your agent can still edit your `.env` file correctly, but the provider never sees what is in it.
 
 Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned request to the provider. The name comes from *sotto voce*, "in a low voice".
 
@@ -16,8 +16,9 @@ Detection runs entirely on your Mac. Nothing is sent anywhere except the scanned
 
 ```
 Claude Code ─┐                            ┌──▶ Anthropic API
-Codex       ├─▶ sotto (on your Mac) ───┤
-pi          ─┘   detect → mask            └──▶ OpenAI API
+Codex       ─┤                            │
+pi          ─┼─▶ sotto (on your Mac) ─────┤
+opencode    ─┘   detect → mask            └──▶ OpenAI API
   real values  ◀── restore ◀───────────────── placeholders only
 ```
 
@@ -33,7 +34,7 @@ pi          ─┘   detect → mask            └──▶ OpenAI API
 
 - A Mac with Apple silicon, and macOS 14 or later
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), and Xcode or its command line tools (to build pf-serve)
-- Claude Code, Codex or pi
+- Claude Code, Codex, pi or opencode
 - About 1.7 GB of free memory while sotto runs (the local model), and 1.6 GB of disk for it
 
 ## Install
@@ -78,18 +79,19 @@ Each conversation then starts through sotto. If `sotto serve` is running, every 
 
 ```sh
 sotto serve           # http://127.0.0.1:7788
-sotto protect on      # Claude Code, Codex and pi now send every session to it; `sotto protect off` undoes it
+sotto protect on      # Claude Code, Codex, pi and opencode now send every session to it; `sotto protect off` undoes it
 ```
 
-`sotto protect` changes, for each tool that is installed (`--client claude|codex|pi` picks one):
+`sotto protect` changes, for each tool that is installed (`--client claude|codex|pi|opencode` picks one):
 
 | Tool | File | Change |
 | --- | --- | --- |
 | Claude Code | `~/.claude/settings.json` | `env.ANTHROPIC_BASE_URL` |
 | Codex | `~/.codex/config.toml` | `model_provider = "sotto"` and a marked `[model_providers.sotto]` block |
 | pi | `~/.pi/agent/models.json` | `baseUrl` for the `anthropic`, `openai` and `openai-codex` providers |
+| opencode | `~/.config/opencode/opencode.json` | `provider.<id>.options.baseURL` for `anthropic` and `openai` |
 
-Each file is backed up next to itself first, and `off` removes only what `on` added. A tool you have already pointed at another gateway is left alone and reported. Claude Code sessions switch at once; Codex and pi pick the change up when they next start.
+Each file is backed up next to itself first, and `off` removes only what `on` added. A tool you have already pointed at another gateway is left alone and reported. Claude Code sessions switch at once; Codex, pi and opencode pick the change up when they next start. sotto edits opencode's `opencode.json` only while it is plain JSON (no comments), and a base URL set in `opencode.jsonc` wins and is reported, not changed.
 
 While protection is on, `sotto serve` must keep running, or the protected agents cannot connect: the Mac app runs it at login. Claude Code turns off Remote Control when its base URL is not api.anthropic.com.
 
@@ -200,6 +202,7 @@ No language model judges spans at request time. The Apple on-device model and Qw
 - **macOS on Apple silicon only.**
 - **Remote Control.** Claude Code turns Remote Control off while its requests go through a proxy, and Remote Control would send the restored transcript to Anthropic around sotto anyway. Use an unprotected session when you need it.
 - **Codex and pi: the Responses and Messages APIs only.** Codex's WebSocket transport is refused (it falls back to HTTPS), and pi providers other than Anthropic and OpenAI (Google, OpenRouter, local models) are not routed through sotto. Chat Completions requests are blocked, not sent unscanned.
+- **opencode: the `anthropic` and `openai` providers only.** opencode Zen, GitHub Copilot, OpenRouter and other providers go straight to their own servers. opencode 2.x works with an API key or a ChatGPT login; opencode 1.x sends a ChatGPT login to chatgpt.com itself, around sotto, and `sotto protect status` warns about it.
 
 ## Development
 

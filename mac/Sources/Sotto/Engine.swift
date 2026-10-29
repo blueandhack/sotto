@@ -27,7 +27,7 @@ final class Engine {
         var pii: Bool?
         var pass: [String]?
         var rules: Rules?
-        /// Per coding agent: claude, codex, pi (`sotto protect status`).
+        /// Per coding agent: claude, codex, pi, opencode (`sotto protect status`).
         var clients: [String: Client]?
     }
 
@@ -35,10 +35,12 @@ final class Engine {
         var installed: Bool?
         var on: Bool?
         var error: String?
+        /// On, but some of its traffic still goes around sotto (opencode 1.x with a ChatGPT login).
+        var warning: String?
         /// Another gateway the user set for this tool: sotto leaves it alone.
         var other: OtherValue?
 
-        /// Codex reports one provider name, pi a list of provider names.
+        /// Codex reports one provider name, pi and opencode a list of provider names.
         enum OtherValue: Decodable, Equatable {
             case one(String), many([String])
             init(from decoder: Decoder) throws {
@@ -150,7 +152,7 @@ final class Engine {
         }
     }
 
-    /// One coding agent (claude, codex, pi) on or off; `client: nil` is every one of them.
+    /// One coding agent (claude, codex, pi, opencode) on or off; `client: nil` is every one of them.
     func setProtection(_ on: Bool, client: String? = "claude") async {
         await act { try await self.applyProtection(on, client: client) }
     }

@@ -104,6 +104,7 @@ CLIENTS = (
     ("codex", "codex", "Codex"),  # codex_exec/…, codex_cli_rs/…
     ("pi-coding-agent", "pi", "pi"),
     ("pi/", "pi", "pi"),
+    ("opencode", "opencode", "opencode"),
 )
 PROVIDERS = {"anthropic": "Anthropic", "openai": "OpenAI"}
 # Events from before sotto recorded clients came from Claude Code, the only client it served.

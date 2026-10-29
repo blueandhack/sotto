@@ -40,6 +40,8 @@ struct SetupCard: View {
                                   detail: "~/.codex/config.toml", note: "new sessions")
                         ClientRow(engine: engine, id: "pi", name: "pi", icon: "π",
                                   detail: "~/.pi/agent/models.json", note: "new sessions")
+                        ClientRow(engine: engine, id: "opencode", name: "opencode", icon: "oc",
+                                  detail: "~/.config/opencode/opencode.json", note: "new sessions")
                     }
                     .padding(.leading, 38)
                 }
@@ -98,7 +100,8 @@ private struct ClientRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(name).font(.system(size: 12.5, weight: .medium)).foregroundStyle(installed ? Theme.text : Theme.secondary)
                 Text(subtitle(c, installed: installed, on: on)).font(.system(size: 11))
-                    .foregroundStyle(c?.error != nil ? Theme.danger : Theme.secondary).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(c?.error != nil || (on && c?.warning != nil) ? Theme.danger : Theme.secondary)
+                    .lineLimit(1).truncationMode(.middle).help(c?.warning ?? "")
             }
             Spacer(minLength: 8)
             if installed && c?.error == nil {
@@ -116,6 +119,7 @@ private struct ClientRow: View {
         if !installed { return "Not installed" }
         if let error = c?.error { return error }
         if !on, let other = c?.other { return "Already uses \(other.text); sotto leaves it alone" }
+        if on, let warning = c?.warning { return warning }
         return on ? "\(detail) · \(note)" : detail
     }
 }
@@ -171,7 +175,7 @@ struct ProtectionRow: View {
 
     /// The coding agents protected right now, by name.
     private var protectedNames: [String] {
-        [("claude", "Claude Code"), ("codex", "Codex"), ("pi", "pi")].compactMap { engine.client($0.0)?.on == true ? $0.1 : nil }
+        [("claude", "Claude Code"), ("codex", "Codex"), ("pi", "pi"), ("opencode", "opencode")].compactMap { engine.client($0.0)?.on == true ? $0.1 : nil }
     }
 
     private var title: String {

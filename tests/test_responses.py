@@ -108,7 +108,7 @@ def test_network_tools_keep_placeholders():
 
 
 class ResponsesMock:
-    """An OpenAI-shaped upstream: records bodies, streams back the first placeholder it sees."""
+    """An OpenAI-shaped upstream: records bodies (decompressed), streams back the first placeholder it sees."""
 
     def __init__(self):
         self.received: list[bytes] = []
@@ -118,6 +118,8 @@ class ResponsesMock:
 
     async def handle(self, request: Request):
         body = await request.body()
+        if request.headers.get("content-encoding") == "zstd":
+            body = zstandard.ZstdDecompressor().decompressobj().decompress(body)
         self.received.append(body)
         self.paths.append(request.url.path)
         self.headers.append({k.lower(): v for k, v in request.headers.items()})
@@ -166,9 +168,32 @@ def test_codex_round_trip_with_zstd_never_sends_the_value():
     assert r.status_code == 200 and canary in r.text and "SOTTO_" not in r.text
     assert not any(canary.encode() in b for b in mock.received)
     assert mock.paths[0] == "/backend-api/codex/responses" and models.status_code == 200
-    assert "x-sotto-client" not in mock.headers[0] and "content-encoding" not in mock.headers[0]  # sent as plain JSON
+    assert "x-sotto-client" not in mock.headers[0]
+    assert mock.headers[0]["content-encoding"] == "zstd"  # chatgpt.com refuses large uncompressed bodies
     event = stats["recent"][0]
     assert event["client"] == "codex" and event["provider"] == "openai" and event["redacted"].get("SECRET")
+
+
+def test_opencode_chatgpt_login_on_the_openai_route_goes_to_chatgpt():
+    """opencode 2.x keeps one OpenAI base URL; a ChatGPT login is told apart by its account header."""
+    canary = selftest.make_canary()
+    mock = ResponsesMock()
+
+    async def go():
+        _, client = make(mock)
+        headers = {"chatgpt-account-id": "acct", "x-sotto-client": "opencode", "authorization": "Bearer jwt"}
+        chatgpt = await client.post("/openai/v1/responses", json=codex_body(canary), headers=headers)
+        apikey = await client.post("/openai/v1/responses", json={**codex_body(canary), "stream": False},
+                                   headers={"x-sotto-client": "opencode"})
+        stats = (await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})).json()
+        return chatgpt, apikey, stats
+
+    chatgpt, apikey, stats = anyio.run(go)
+    assert chatgpt.status_code == 200 and canary in chatgpt.text and apikey.status_code == 200
+    assert mock.paths == ["/backend-api/codex/responses", "/v1/responses"]
+    assert mock.headers[0]["content-encoding"] == "zstd" and "content-encoding" not in mock.headers[1]
+    assert not any(canary.encode() in b for b in mock.received)
+    assert {e["client"] for e in stats["recent"]} == {"opencode"}
 
 
 def test_openai_api_key_route_and_fail_closed_cases():
@@ -197,3 +222,14 @@ def test_websocket_upgrades_are_refused():
         with pytest.raises(WebSocketDisconnect):
             with tc.websocket_connect("/chatgpt/backend-api/codex/responses"):
                 pass
+
+
+def test_an_upgrade_that_arrives_as_plain_http_is_not_forwarded():
+    mock = ResponsesMock()
+
+    async def go():
+        _, client = make(mock)
+        return await client.get("/openai/v1/responses", headers={"upgrade": "websocket", "connection": "Upgrade"})
+
+    r = anyio.run(go)
+    assert r.status_code == 403 and mock.received == []

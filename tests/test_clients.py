@@ -15,9 +15,11 @@ PORT = 7788
 def homes(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("PI_CODING_AGENT_DIR", str(tmp_path / "pi"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
     (tmp_path / "codex").mkdir()
     (tmp_path / "pi").mkdir()
-    # Whether codex or pi is on this machine's PATH must not matter: a tool counts as installed
+    # Whether codex, pi or opencode is on this machine's PATH must not matter: a tool counts as installed
     # here only through the config files each test writes.
     monkeypatch.setattr(clients.shutil, "which", lambda name: None)
     return tmp_path
@@ -104,6 +106,77 @@ def test_sotto_codex_runs_codex_through_the_proxy(tmp_path, monkeypatch):
 
 
 def test_a_tool_that_is_not_installed_is_skipped(homes):
-    out = clients.protect_clients("on", PORT, ["codex", "pi"])
-    assert out == {"codex": {"installed": False, "on": False}, "pi": {"installed": False, "on": False}}
+    out = clients.protect_clients("on", PORT, ["codex", "pi", "opencode"])
+    off = {"installed": False, "on": False}
+    assert out == {"codex": off, "pi": off, "opencode": off}
     assert not (homes / "codex" / "config.toml").exists() and not (homes / "pi" / "models.json").exists()
+    assert not (homes / "xdg-config" / "opencode").exists()
+
+
+def opencode_dir(homes):
+    d = homes / "xdg-config" / "opencode"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def test_opencode_on_off_keeps_the_rest_of_the_config(homes):
+    cfg = opencode_dir(homes) / "opencode.json"
+    original = {"$schema": "https://opencode.ai/config.json", "model": "anthropic/claude-sonnet-5-5",
+                "provider": {"anthropic": {"options": {"timeout": 600000}}}}
+    cfg.write_text(json.dumps(original))
+    st = clients.opencode_enable(PORT)
+    data = json.loads(cfg.read_text())
+    assert st["on"] and st["providers"] == ["anthropic", "openai"] and data["model"] == original["model"]
+    assert data["provider"]["anthropic"]["options"] == {
+        "timeout": 600000, "baseURL": "http://127.0.0.1:7788/v1", "headers": {"x-sotto-client": "opencode"}}
+    assert data["provider"]["openai"]["options"]["baseURL"] == "http://127.0.0.1:7788/openai/v1"
+    clients.opencode_enable(PORT)  # twice: the same file
+    assert json.loads(cfg.read_text()) == data
+    assert not clients.opencode_disable(PORT)["on"]
+    assert json.loads(cfg.read_text()) == original
+
+
+def test_opencode_new_config_and_a_gateway_set_in_jsonc(homes):
+    d = opencode_dir(homes)
+    # opencode.jsonc is read after opencode.json, so its base URL wins: sotto reports it, never edits it.
+    jsonc = '{\n  // the team gateway\n  "provider": {"openai": {"options": {"baseURL": "https://gw.corp.internal/v1",},},},\n}\n'
+    (d / "opencode.jsonc").write_text(jsonc)
+    st = clients.opencode_enable(PORT)
+    data = json.loads((d / "opencode.json").read_text())
+    assert st["providers"] == ["anthropic"] and st["other"] == ["openai"]
+    assert data["$schema"] == "https://opencode.ai/config.json" and "openai" not in data["provider"]
+    assert (d / "opencode.jsonc").read_text() == jsonc
+
+
+def test_opencode_v2_providers_entry_counts_as_the_users_own(homes):
+    cfg = opencode_dir(homes) / "opencode.json"
+    cfg.write_text(json.dumps({"providers": {"anthropic": {"settings": {"baseURL": "https://proxy.example/v1"}}}}))
+    st = clients.opencode_enable(PORT)
+    assert st["providers"] == ["openai"] and st["other"] == ["anthropic"]
+
+
+def test_opencode_refuses_to_rewrite_a_json_file_with_comments(homes):
+    cfg = opencode_dir(homes) / "opencode.json"
+    text = '{\n  // mine\n  "model": "openai/gpt-5.5"\n}\n'
+    cfg.write_text(text)
+    with pytest.raises(ProtectError, match="not plain JSON"):
+        clients.opencode_enable(PORT)
+    assert cfg.read_text() == text
+    assert clients.opencode_status(PORT) == {"installed": True, "on": False, "providers": [], "config": str(cfg)}
+
+
+def test_opencode_1x_chatgpt_login_is_reported(homes, monkeypatch):
+    opencode_dir(homes)
+    auth = homes / "xdg-data" / "opencode" / "auth.json"
+    auth.parent.mkdir(parents=True)
+    auth.write_text(json.dumps({"openai": {"type": "oauth", "refresh": "r", "access": "a", "expires": 0}}))
+    clients.opencode_enable(PORT)
+    monkeypatch.setattr(clients, "opencode_major", lambda: 1)
+    assert "chatgpt.com" in clients.opencode_status(PORT)["warning"]
+    monkeypatch.setattr(clients, "opencode_major", lambda: 2)  # 2.x keeps the base URL
+    assert "warning" not in clients.opencode_status(PORT)
+
+
+def test_jsonc_reader():
+    text = '{"a": "http://x//y", /* note */ "b": [1, 2,], // end\n "c": "say \\"hi\\" // not a comment",}'
+    assert clients._jsonc(text) == {"a": "http://x//y", "b": [1, 2], "c": 'say "hi" // not a comment'}

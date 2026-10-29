@@ -12,8 +12,13 @@ and counted, then forwarded exactly as it came, unmasked, and nothing is blocked
 One proxy serves every provider, chosen by path prefix:
 
     /v1/messages...                      Anthropic Messages API (Claude Code, pi)
-    /openai/v1/responses...              OpenAI Responses API (Codex or pi with an API key)
+    /openai/v1/responses...              OpenAI Responses API (Codex, pi or opencode with an API key)
     /chatgpt/backend-api/codex/responses OpenAI through a ChatGPT login (Codex, pi)
+
+opencode keeps one OpenAI base URL for both logins, so an /openai/v1 request that carries a
+ChatGPT account (`chatgpt-account-id`) goes to chatgpt.com/backend-api/codex instead: a ChatGPT
+token is only good there. Scanned bodies bound for chatgpt.com are sent zstd-compressed, as
+Codex sends them; that backend refuses large uncompressed ones.
 """
 
 from __future__ import annotations
@@ -119,7 +124,10 @@ class Proxy:
         self._scan_lock = threading.Lock()
         self.app = Starlette(routes=[Route("/{path:path}", self.handle, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])])
 
-    def target(self, path: str) -> Target:
+    def target(self, path: str, chatgpt_account: bool = False) -> Target:
+        if chatgpt_account and path.startswith("/openai/v1/"):
+            rest = "/backend-api/codex" + path[len("/openai/v1"):]
+            return Target("openai", self.prefixed["/chatgpt"], rest, api_of(rest))
         for prefix, base in self.prefixed.items():
             if path.startswith(prefix + "/"):
                 rest = path[len(prefix):]
@@ -134,7 +142,11 @@ class Proxy:
             return api_error(403, "permission_error", "requests must come from this machine")
         if path.startswith("/_sotto/"):
             return self._local(request, path)
-        t = self.target(path)
+        if request.headers.get("upgrade"):
+            # Without a WebSocket library uvicorn hands an upgrade over as a plain GET: refuse it
+            # here too, so it is never forwarded. Clients fall back to HTTPS.
+            return api_error(403, "permission_error", "sotto does not scan WebSockets; use HTTPS")
+        t = self.target(path, "chatgpt-account-id" in request.headers)
         if t.api and request.method == "POST":
             return await self._scanned(request, t)
         body = await request.body()
@@ -204,6 +216,11 @@ class Proxy:
         payload = json.dumps(masked, ensure_ascii=False).encode()
         url = self._url(request, t)
         headers = self._headers(request)
+        if t.base == self.prefixed["/chatgpt"]:
+            import zstandard
+
+            payload = zstandard.ZstdCompressor().compress(payload)
+            headers.append(("content-encoding", "zstd"))
         try:
             if masked.get("stream") and t.path not in ("/v1/messages/count_tokens",):
                 return await self._stream(url, headers, payload, path, t, scan_ms, counts, new, origin=origin)
@@ -330,7 +347,8 @@ class Proxy:
     @staticmethod
     def _headers(request: Request, keep_encoding: bool = False) -> list[tuple[str, str]]:
         # Auth headers (x-api-key, authorization) pass through unchanged and are never logged.
-        # A scanned body is re-encoded as plain JSON, so its content-encoding no longer applies.
+        # A scanned body is re-encoded (plain JSON, or zstd for chatgpt.com), so the client's
+        # content-encoding no longer applies.
         drop = HOP_HEADERS if keep_encoding else HOP_HEADERS | {"content-encoding"}
         headers = [(k, v) for k, v in request.headers.items() if k.lower() not in drop]
         headers.append(("accept-encoding", "identity"))

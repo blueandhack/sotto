@@ -224,6 +224,7 @@ private struct FlowBands {
         case "claude-code": Color(light: NSColor(hex: 0xC8775A), dark: NSColor(hex: 0xD98B6E))
         case "codex": Color(light: NSColor(hex: 0x5B6270), dark: NSColor(hex: 0x9AA1AE))
         case "pi": Color(light: NSColor(hex: 0x6E78E0), dark: NSColor(hex: 0x8F98F0))
+        case "opencode": Color(light: NSColor(hex: 0xB7791F), dark: NSColor(hex: 0xE0A458))
         default: Color(light: NSColor(hex: 0x2A9D8F), dark: NSColor(hex: 0x4FC3B5))
         }
     }
