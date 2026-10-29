@@ -173,6 +173,7 @@ port = 7788            # for `sotto serve`
 
 [log]
 level = "info"         # logs contain types and counts, never values
+previews = true        # the app's Logs page shows the first and last character of masked values (memory only)
 ```
 
 ## What sotto stores, and where
@@ -185,12 +186,13 @@ level = "info"         # logs contain types and counts, never values
 | Running proxy's port | `~/.config/sotto/runtime.json` (0600) |
 | Request history for the Activity page: time, endpoint, outcome, counts by type; never values | `~/.config/sotto/history.jsonl` (0600), last 20,000 requests |
 | Masked values | Process memory only, cleared on exit |
+| The Logs page: per masked value its type, rule and length, and the first and last character of values of 8 or more characters | Process memory only (the last 2,000), cleared on exit; `[log] previews = false` keeps types and rules only |
 
 sotto makes no network calls except the request it forwards, and `sotto setup`'s one model download. There is no telemetry and no update check.
 
 ## Mac app
 
-A menu-bar app that sets sotto up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per coding agent and provider, with hover highlighting; what was found and masked per type, with switches for what gets masked and an editor for your own rules; scan latency; and every request in a searchable history, in light and dark mode. It reads a local stats feed that carries counts only, so it cannot show a secret even by mistake. See [mac/README.md](mac/README.md) to build it.
+A menu-bar app that sets sotto up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per coding agent and provider, with hover highlighting; what was found and masked per type, with switches for what gets masked and an editor for your own rules; scan latency; every request in a history; and a searchable Logs page of what was masked, in light and dark mode. Its local stats feed carries counts, types and rules, and for the Logs page only the first and last character of each value of 8 or more characters (`g…w`), so it cannot show a whole secret even by mistake. See [mac/README.md](mac/README.md) to build it.
 
 ## Accuracy and speed
 

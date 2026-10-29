@@ -263,6 +263,33 @@ final class StatsStore {
         }
     }
 
+    // MARK: Findings (the Logs page): what new text held, from sotto's memory.
+
+    private(set) var findings: [Finding] = []
+    /// [log] previews: the feed carries the first and last character of long values.
+    private(set) var previewsOn = true
+
+    func loadFindings() async {
+        if sampleMode {
+            findings = Finding.samples
+            previewsOn = true
+            return
+        }
+        guard let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_sotto/findings")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 4
+        struct Page: Decodable { var findings: [Finding]; var previews: Bool? }
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { findings = []; return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let page = try? decoder.decode(Page.self, from: data) else { return }
+        findings = page.findings
+        previewsOn = page.previews ?? true
+    }
+
     // MARK: History (the Activity page): older events from sotto's history file, paged.
 
     private(set) var history: [Snapshot.Event] = []

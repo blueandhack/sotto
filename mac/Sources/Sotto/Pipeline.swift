@@ -481,3 +481,6 @@ private struct FlowBands {
         }
     }
 }
+
+/// A coding agent's color, as the flow diagrams draw it.
+func clientColor(_ id: String) -> Color { FlowBands.clientColor(id) }

@@ -109,7 +109,7 @@ class Proxy:
     def __init__(self, redactor: Redactor, upstream: str = UPSTREAM, policy: dict[str, str] | None = None,
                  client: httpx.AsyncClient | None = None, stats: Stats | None = None, stats_token: str | None = None,
                  info: dict | None = None, observe=None, openai_upstream: str = OPENAI_UPSTREAM,
-                 chatgpt_upstream: str = CHATGPT_UPSTREAM):
+                 chatgpt_upstream: str = CHATGPT_UPSTREAM, previews=True):
         self.redactor = redactor
         self.upstream = upstream.rstrip("/")
         self.prefixed = {"/openai": openai_upstream.rstrip("/"), "/chatgpt": chatgpt_upstream.rstrip("/")}
@@ -120,6 +120,8 @@ class Proxy:
         self.info = info or {}  # shown in the stats feed: mode, pii, detector, version
         # A callable, re-checked per request (config.ObserveFlag), or a fixed bool.
         self._observe = observe if callable(observe) else (lambda: bool(observe))
+        # The Logs page's first and last characters ([log] previews): a callable or a fixed bool.
+        self._previews = previews if callable(previews) else (lambda: bool(previews))
         # The detectors and the vault are not thread-safe; scans run one at a time off the event loop.
         self._scan_lock = threading.Lock()
         self.app = Starlette(routes=[Route("/{path:path}", self.handle, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])])
@@ -162,7 +164,7 @@ class Proxy:
     def _local(self, request: Request, path: str) -> Response:
         if path == "/_sotto/health":
             return JSONResponse({"ok": True})
-        if path in ("/_sotto/stats", "/_sotto/history", "/_sotto/flows") and request.method == "GET":
+        if path in ("/_sotto/stats", "/_sotto/history", "/_sotto/flows", "/_sotto/findings") and request.method == "GET":
             given = request.headers.get("authorization", "").removeprefix("Bearer ")
             if not self.stats_token or not hmac.compare_digest(given, self.stats_token):
                 return api_error(401, "authentication_error", "missing or wrong stats token")
@@ -174,6 +176,12 @@ class Proxy:
             history = self.stats.history
             events = history.events() if history else list(self.stats.events)
             return JSONResponse({"window": window, **flows(events, time.time() - window)})
+        if path == "/_sotto/findings" and request.method == "GET":
+            # What was masked in new text, newest first: types, rules, lengths, and the first and
+            # last character of values of 8 or more ([log] previews). In memory only.
+            if not self._previews():
+                self.stats.drop_previews()
+            return JSONResponse({"findings": self.stats.findings_page(), "previews": self._previews()})
         if path == "/_sotto/history" and request.method == "GET":
             q = request.query_params
             try:
@@ -209,7 +217,7 @@ class Proxy:
             return api_error(400, "invalid_request_error", "request body is not a JSON object sotto can read; nothing was sent")
         started = time.perf_counter()
         try:
-            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api)
+            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api, origin)
         except Exception as e:  # any detector or redaction failure: block, never send raw
             log.error("blocked %s: scan failed (%s)", path, type(e).__name__)
             self.stats.record(path, "blocked", 500, origin=origin)
@@ -252,7 +260,7 @@ class Proxy:
             body = json.loads(decode_body(raw, request.headers.get("content-encoding", "")))
             if isinstance(body, dict):
                 started = time.perf_counter()
-                _, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api)
+                _, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api, origin, "observed")
                 scan_ms = (time.perf_counter() - started) * 1000
         except Exception as e:  # observing never stops a request
             log.warning("observe %s: not scanned (%s)", path, type(e).__name__)
@@ -281,16 +289,20 @@ class Proxy:
             log.warning("%s: %d placeholder(s) in the reply could not be restored (made by another sotto process, "
                         "or before a restart); they reach the client as placeholders", path, restored["unresolved"])
 
-    def _redact(self, body: dict, api: str = "messages") -> tuple[dict, Counter, int]:
+    def _redact(self, body: dict, api: str = "messages", origin=None, outcome: str = "masked") -> tuple[dict, Counter, int]:
         """The masked body, spans masked per type, and how many of them were in text this request
-        brought (the rest are earlier turns, which clients resend every time)."""
+        brought (the rest are earlier turns, which clients resend every time). What the new text
+        held goes to the Logs page, in memory only."""
         with self._scan_lock:
             self.redactor.counts.clear()
             self.redactor.fresh = 0
+            self.redactor.findings = []
+            self.redactor.previews = self._previews()
             if api == "responses":
                 masked = self.redactor.redact_responses_request(body)
             else:
                 masked = self.redactor.redact_request(body)
+            self.stats.record_findings(self.redactor.findings, outcome, origin)
             return masked, Counter(self.redactor.counts), self.redactor.fresh
 
     def _restore(self, data: dict, counts: Counter, api: str = "messages") -> dict:

@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
-    case overview, activity, detection, performance, settings
+    case overview, activity, logs, detection, performance, settings
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var icon: String {
         switch self {
         case .overview: "square.grid.2x2"
         case .activity: "list.bullet.rectangle"
+        case .logs: "text.magnifyingglass"
         case .detection: "line.3.horizontal.decrease.circle"
         case .performance: "speedometer"
         case .settings: "gearshape"
@@ -29,6 +30,7 @@ struct Dashboard: View {
                 switch page {
                 case .overview: OverviewPage(store: store)
                 case .activity: ActivityPage(store: store)
+                case .logs: LogsPage(store: store)
                 case .detection: DetectionPage(store: store, engine: engine)
                 case .performance: PerformancePage(store: store)
                 case .settings: SettingsPage(store: store, engine: engine, appearance: $appearance)
@@ -300,7 +302,7 @@ struct SettingsPage: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Card(title: "Privacy") {
-                        Text("This app reads sotto's stats feed: counts, types and timestamps only. It never receives a value or a placeholder, talks only to 127.0.0.1, and sends no telemetry.")
+                        Text("This app reads sotto's stats feed: counts, types and timestamps, and for the Logs page the first and last character of long masked values (turn that off with [log] previews = false). It never receives a whole value or a placeholder, talks only to 127.0.0.1, and sends no telemetry.")
                             .font(.system(size: 12)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
                     }
                     .fixedSize(horizontal: false, vertical: true)

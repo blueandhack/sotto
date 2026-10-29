@@ -56,7 +56,8 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
     observe = LiveConfig(cfg.path, cfg, on_change=apply)
     history = History(Path.home() / ".config" / "sotto" / "history.jsonl")
     proxy = Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
-                  stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe)
+                  stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe,
+                  previews=lambda: observe.config.log_previews)
     switch = ModelSwitch(pipeline, proxy._scan_lock)
     return proxy
 

@@ -184,7 +184,7 @@ def event_kind(e: dict) -> str:
 
 
 class Stats:
-    def __init__(self, recent: int = 200, history: History | None = None):
+    def __init__(self, recent: int = 200, history: History | None = None, findings: int = 2000):
         self._lock = threading.Lock()
         self.history = history
         self.started = time.time()
@@ -198,6 +198,9 @@ class Stats:
         self.with_new = 0  # of those, requests whose new text (not resent history) had something to mask
         self.unresolved = 0  # placeholders in replies that this process could not restore
         self.minutes: deque[dict] = deque(maxlen=180)  # per-minute buckets for the timeline
+        # The Logs page: what new text held, one entry per masked value. In memory only, never in
+        # the history file: a preview is the first and last character of a value.
+        self.findings: deque[dict] = deque(maxlen=findings)
 
     def record(self, path: str, outcome: str, status: int, scan_ms: float | None = None,
                redacted: Counter | None = None, restored: Counter | None = None, new: int = 0,
@@ -235,6 +238,23 @@ class Stats:
             self.events.append(event)
         if self.history:
             self.history.append(event)
+
+    def record_findings(self, found: list[dict], outcome: str = "masked", origin: tuple[str, str] | None = None) -> None:
+        ts = round(time.time(), 6)
+        client, provider = origin or (None, None)
+        with self._lock:
+            for i, f in enumerate(found):
+                self.findings.append({**f, "ts": ts, "seq": i, "outcome": outcome, "client": client, "provider": provider})
+
+    def findings_page(self, limit: int = 2000) -> list[dict]:
+        with self._lock:
+            return sorted(self.findings, key=lambda f: (-f["ts"], f["seq"]))[:limit]  # newest request first, in text order
+
+    def drop_previews(self) -> None:
+        """[log] previews turned off: forget the characters already kept."""
+        with self._lock:
+            for f in self.findings:
+                f["preview"] = None
 
     def snapshot(self, **extra) -> dict:
         with self._lock:

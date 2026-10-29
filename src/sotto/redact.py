@@ -32,6 +32,28 @@ PLACEHOLDER_HINT = (
 RESPONSES_PASS_THROUGH = frozenset({"reasoning", "compaction", "item_reference", "web_search_call", "image_generation_call"})
 RESPONSES_HINT = {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": PLACEHOLDER_HINT}]}
 
+# Below this length the first and last characters give too much of a value away: show none.
+PREVIEW_MIN = 8
+
+
+def preview(value: str) -> str:
+    """The first and last character of a masked value, for the Logs page: `g…w`. Shorter
+    values show nothing but dots."""
+    return f"{value[0]}…{value[-1]}" if len(value) >= PREVIEW_MIN else "•••"
+
+
+def detector_of(source: str) -> tuple[str, str]:
+    """(detector, rule) for a span's source, preferring your rule, then a built-in rule, then the
+    model: rules:github-token|pf-serve -> ("rules", "github-token")."""
+    parts = source.split("|")
+    for prefix, name in (("user:", "user"), ("rules:", "rules")):
+        hit = next((x for x in parts if x.startswith(prefix)), None)
+        if hit:
+            return name, hit[len(prefix):]
+    if "known" in parts and len(parts) == 1:
+        return "known", ""
+    return "model", ""
+
 
 class Redactor:
     def __init__(self, detector, vault: Vault, cache_size: int = 4096):
@@ -44,6 +66,10 @@ class Redactor:
         # Spans masked in text this redactor had not seen before, since the last reset: what a
         # request brought that is new. Claude Code resends the whole conversation every turn.
         self.fresh = 0
+        # Those spans for the Logs page: type, detector, rule, length, and with `previews` the
+        # first and last character. Never the value. Reset with `fresh`.
+        self.findings: list[dict] = []
+        self.previews = True
 
     def _detect(self, text: str) -> tuple[tuple[Span, ...], bool]:
         """Detector spans, cached per text: the conversation history is resent every turn.
@@ -85,6 +111,11 @@ class Redactor:
         spans, seen = self._spans(text)
         if not seen:
             self.fresh += len(spans)
+            for s in spans:
+                value = text[s.start : s.end]
+                detector, rule = detector_of(s.source)
+                self.findings.append({"type": s.type, "detector": detector, "rule": rule, "chars": len(value),
+                                      "preview": preview(value) if self.previews else None})
         if not spans:
             return text
         out, pos = [], 0

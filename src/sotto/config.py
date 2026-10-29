@@ -24,6 +24,7 @@
 
     [log]
     level = "info"
+    previews = true        # the Logs page shows the first and last character of masked values (in memory only)
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ _SCHEMA = {
     "detect": {"pii": bool, "model": bool, "observe": bool, "pass": list},
     "allowlist": {"strings": list, "patterns": list},
     "rules": {"mask": list, "off": list},
-    "log": {"level": str},
+    "log": {"level": str, "previews": bool},
 }
 LOG_LEVELS = ("debug", "info", "warning", "error")
 
@@ -65,6 +66,7 @@ class Config:
     allow_patterns: list[str] = field(default_factory=list)
     restore: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_POLICY))
     log_level: str = "info"
+    log_previews: bool = True
     path: Path | None = None
 
 
@@ -144,6 +146,7 @@ def load(path: Path | None = None) -> Config:
             raise ConfigError(f"{path}: restore.{tool} must be \"restore\" or \"keep\"")
     cfg.restore = {**DEFAULT_POLICY, **restore}
     cfg.log_level = log.get("level", cfg.log_level)
+    cfg.log_previews = log.get("previews", cfg.log_previews)
     if cfg.log_level not in LOG_LEVELS:
         raise ConfigError(f"{path}: log.level must be one of {', '.join(LOG_LEVELS)}")
     return cfg
