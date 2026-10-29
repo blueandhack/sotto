@@ -1,0 +1,546 @@
+// The flow video: how sotto detects, masks and restores, as an H.264 MP4.
+//
+//     swift docs/video/flow.swift docs/video/sotto-flow.mp4
+//
+// Every frame is drawn with SwiftUI (ImageRenderer) and encoded with AVFoundation, so it needs
+// nothing beyond macOS and Xcode's command line tools. Every value shown is synthetic.
+
+import AVFoundation
+import SwiftUI
+
+let W: CGFloat = 1920, H: CGFloat = 1080
+let FPS: Int32 = 30
+let DURATION = 48.0
+
+// MARK: - Palette (the app's light theme)
+
+extension Color {
+    init(hex: UInt32, alpha: Double = 1) {
+        self.init(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+                  blue: Double(hex & 0xFF) / 255, opacity: alpha)
+    }
+}
+
+enum C {
+    static let background = Color(hex: 0xF5F6F8)
+    static let surface = Color.white
+    static let border = Color(hex: 0x000000, alpha: 0.09)
+    static let text = Color(hex: 0x16181D)
+    static let secondary = Color(hex: 0x6B7280)
+    static let faint = Color(hex: 0x000000, alpha: 0.05)
+    static let accent = Color(hex: 0x4F5BD5)
+    static let accentSoft = Color(hex: 0x4F5BD5, alpha: 0.12)
+    static let real = Color(hex: 0xE8590C)  // a real value
+    static let realSoft = Color(hex: 0xE8590C, alpha: 0.14)
+    static let success = Color(hex: 0x16A34A)
+}
+
+// MARK: - Timing
+
+func clamp(_ x: Double) -> Double { min(1, max(0, x)) }
+func smooth(_ x: Double) -> Double { let c = clamp(x); return c * c * (3 - 2 * c) }
+/// 0 before `a`, 1 after `b`, eased between.
+func p(_ t: Double, _ a: Double, _ b: Double) -> Double { smooth((t - a) / (b - a)) }
+/// Fades in over [a, a+f] and out over [b-f, b].
+func window(_ t: Double, _ a: Double, _ b: Double, fade f: Double = 0.5) -> Double { min(p(t, a, a + f), 1 - p(t, b - f, b)) }
+func lerp(_ a: CGFloat, _ b: CGFloat, _ x: Double) -> CGFloat { a + (b - a) * CGFloat(x) }
+
+// MARK: - The story: three synthetic values
+
+struct Value {
+    let real: String
+    let placeholder: String
+    let tag: String
+}
+
+let values = [
+    Value(real: "ghp_R7kq2V9mX4pL8tY3wB6cF1hJ5dG0sAe7QwZn", placeholder: "SOTTO_SECRET_7f3a9c2e", tag: "SECRET · github-token"),
+    Value(real: "Zx81!kq_pLm", placeholder: "SOTTO_SECRET_1b9d04aa", tag: "SECRET · connection-string-password"),
+    Value(real: "jane.roe@fastmail.com", placeholder: "SOTTO_EMAIL_c41e8f07", tag: "EMAIL · email"),
+]
+
+enum Piece {
+    case text(String, Color)
+    /// A value: `masked` 0 shows the real value, 1 the placeholder.
+    case value(Int)
+}
+
+let request: [[Piece]] = [
+    [.text("user: deploy staging with these settings", C.secondary)],
+    [.text("GITHUB_TOKEN=", C.text), .value(0)],
+    [.text("DATABASE_URL=postgres://app:", C.text), .value(1), .text("@db.internal/orders", C.text)],
+    [.text("# owner: ", C.secondary), .value(2)],
+]
+
+let reply: [[Piece]] = [
+    [.text("assistant: Deploying staging now.", C.secondary)],
+    [.text("$ export GITHUB_TOKEN=", C.text), .value(0)],
+    [.text("$ psql postgres://app:", C.text), .value(1), .text("@db.internal/orders", C.text)],
+    [.text("$ ./deploy.sh staging --notify ", C.text), .value(2)],
+]
+
+let codeSize: CGFloat = 23
+let charWidth: CGFloat = ("0" as NSString).size(withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: codeSize, weight: .regular)]).width
+
+// MARK: - The frame at time t
+
+/// Not a View itself: a View whose body nests this deep makes SwiftUI recurse without end when it
+/// renders. Each part is an AnyView, built from `t`.
+struct Frame {
+    let t: Double
+
+    var view: AnyView {
+        AnyView(ZStack(alignment: .topLeading) {
+            C.background
+            diagram.opacity(p(t, 3.6, 4.6) * (1 - p(t, 42, 43)))
+            intro.opacity(1 - p(t, 3.4, 4.2))
+            outro.opacity(p(t, 42.6, 43.6))
+        }
+        .frame(width: W, height: H))
+    }
+
+    // MARK: Intro and outro
+
+    var intro: AnyView {
+        AnyView({
+        VStack(spacing: 22) {
+            badge(96)
+            Text("How sotto keeps secrets on your Mac").font(.system(size: 64, weight: .semibold)).foregroundStyle(C.text)
+            Text("Detect · Mask · Send · Restore").font(.system(size: 30)).foregroundStyle(C.secondary)
+        }
+        .frame(width: W, height: H)
+        .offset(y: lerp(0, -20, p(t, 0, 3.4)))
+        }())
+    }
+
+    var outro: AnyView {
+        AnyView({
+        VStack(spacing: 22) {
+            badge(96)
+            Text("sotto").font(.system(size: 72, weight: .semibold)).foregroundStyle(C.text)
+            Text("Secrets and personal data stay on your Mac.").font(.system(size: 36)).foregroundStyle(C.text)
+            Text("Detection, masking and restoring all run locally. The provider only ever sees placeholders.")
+                .font(.system(size: 26)).foregroundStyle(C.secondary)
+            Text("github.com/blueandhack/sotto").font(.system(size: 26, design: .monospaced)).foregroundStyle(C.accent).padding(.top, 16)
+        }
+        .frame(width: W, height: H)
+        }())
+    }
+
+    /// The app's mark: three lines of text, the middle one ending in placeholder dots.
+    func badge(_ size: CGFloat) -> AnyView {
+        AnyView({
+        let bar = size * 0.09
+        return RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+            .fill(LinearGradient(colors: [Color(hex: 0x5B66E0), Color(hex: 0x3F49C2)], startPoint: .top, endPoint: .bottom))
+            .overlay(alignment: .leading) {
+                VStack(alignment: .leading, spacing: size * 0.11) {
+                    Capsule().fill(.white).frame(width: size * 0.42, height: bar)
+                    HStack(spacing: size * 0.06) {
+                        Capsule().fill(.white).frame(width: size * 0.22, height: bar)
+                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
+                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
+                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
+                    }
+                    Capsule().fill(.white).frame(width: size * 0.32, height: bar)
+                }
+                .padding(.leading, size * 0.2)
+            }
+            .frame(width: size, height: size)
+        }())
+    }
+
+    // MARK: The diagram
+
+    var diagram: AnyView {
+        AnyView({
+        ZStack(alignment: .topLeading) {
+            header
+            macBoundary
+            node(x: 330, title: "Your coding agent", detail: "Claude Code, Codex, pi, opencode", icon: "terminal")
+            node(x: 880, title: "sotto", detail: "a proxy on 127.0.0.1", icon: nil)
+            node(x: 1600, title: "Model provider", detail: "Anthropic or OpenAI", icon: "cloud")
+            arrows
+            packet
+            card
+            vault
+            caption
+        }
+        }())
+    }
+
+    var header: AnyView {
+        AnyView({
+        HStack(spacing: 16) {
+            badge(44)
+            Text("How a request travels through sotto").font(.system(size: 28, weight: .semibold)).foregroundStyle(C.text)
+            Spacer()
+            ForEach(Array(["Detect", "Mask", "Send", "Restore"].enumerated()), id: \.offset) { i, name in
+                let on = stepOn(i)
+                HStack(spacing: 8) {
+                    Text("\(i + 1)").font(.system(size: 18, weight: .bold)).foregroundStyle(on > 0.5 ? .white : C.secondary)
+                        .frame(width: 30, height: 30).background(Circle().fill(on > 0.5 ? C.accent : C.faint))
+                    Text(name).font(.system(size: 22, weight: on > 0.5 ? .semibold : .regular))
+                        .foregroundStyle(on > 0.5 ? C.accent : C.secondary)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(C.accentSoft.opacity(on)))
+            }
+        }
+        .padding(.horizontal, 80).frame(width: W, height: 120)
+        }())
+    }
+
+    func stepOn(_ i: Int) -> Double {
+        [window(t, 12, 18.2, fade: 0.3), window(t, 18.2, 24, fade: 0.3), window(t, 24, 28.4, fade: 0.3), window(t, 32.6, 39, fade: 0.3)][i]
+    }
+
+    var macBoundary: AnyView {
+        AnyView({
+        RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .strokeBorder(C.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 2, dash: [10, 8]))
+            .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(C.faint.opacity(0.5)))
+            .overlay(alignment: .topLeading) {
+                Label("Your Mac", systemImage: "laptopcomputer").font(.system(size: 20, weight: .medium)).foregroundStyle(C.secondary)
+                    .padding(.leading, 24).padding(.top, 14)
+            }
+            .frame(width: 1110, height: 230)
+            .offset(x: 50, y: 150)
+        }())
+    }
+
+    func node(x: CGFloat, title: String, detail: String, icon: String?) -> AnyView {
+        AnyView({
+        let active = title == "sotto" ? window(t, 11.6, 24.2, fade: 0.4) + window(t, 31.6, 39.4, fade: 0.4) : 0
+        return HStack(spacing: 16) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: 30)).foregroundStyle(C.secondary).frame(width: 44)
+            } else {
+                badge(48)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 26, weight: .semibold)).foregroundStyle(C.text)
+                Text(detail).font(.system(size: 18)).foregroundStyle(C.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 22)
+        .frame(width: 400, height: 112)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(C.surface)
+            .shadow(color: .black.opacity(0.06), radius: 12, y: 4))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .strokeBorder(active > 0 ? C.accent.opacity(active) : C.border, lineWidth: active > 0 ? 3 : 1))
+        .offset(x: x - 200, y: 210)
+        }())
+    }
+
+    var arrows: AnyView {
+        AnyView({
+        Path { path in
+            for (a, b) in [(530.0, 680.0), (1080.0, 1400.0)] {
+                path.move(to: CGPoint(x: a, y: 266)); path.addLine(to: CGPoint(x: b, y: 266))
+                path.move(to: CGPoint(x: b, y: 266)); path.addLine(to: CGPoint(x: b - 12, y: 258))
+                path.move(to: CGPoint(x: b, y: 266)); path.addLine(to: CGPoint(x: b - 12, y: 274))
+                path.move(to: CGPoint(x: b, y: 302)); path.addLine(to: CGPoint(x: a, y: 302))
+                path.move(to: CGPoint(x: a, y: 302)); path.addLine(to: CGPoint(x: a + 12, y: 294))
+                path.move(to: CGPoint(x: a, y: 302)); path.addLine(to: CGPoint(x: a + 12, y: 310))
+            }
+        }
+        .stroke(C.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+        }())
+    }
+
+    /// The request or reply in flight: orange while it carries real values, indigo when masked.
+    var packet: AnyView {
+        AnyView({
+        let legs: [(Double, Double, CGFloat, CGFloat, CGFloat, Color, String)] = [
+            (10, 11.8, 530, 680, 266, C.real, "real values"),
+            (24.4, 27.2, 1080, 1400, 266, C.accent, "placeholders only"),
+            (29, 31.4, 1400, 1080, 302, C.accent, "placeholders only"),
+            (39.2, 40.8, 680, 530, 302, C.real, "real values"),
+        ]
+        return ZStack(alignment: .topLeading) {
+            ForEach(Array(legs.enumerated()), id: \.offset) { _, leg in
+                let k = p(t, leg.0, leg.1)
+                let shown = window(t, leg.0 - 0.2, leg.1 + 0.2, fade: 0.2)
+                let x = lerp(leg.2, leg.3, k)
+                ZStack {
+                    Circle().fill(leg.5.opacity(0.18)).frame(width: 46, height: 46)
+                    Circle().fill(leg.5).frame(width: 22, height: 22)
+                }
+                .overlay(alignment: .top) {
+                    Text(leg.6).font(.system(size: 17, weight: .medium)).foregroundStyle(leg.5).fixedSize().offset(y: leg.4 < 280 ? -34 : 40)
+                }
+                .position(x: x, y: leg.4)
+                .opacity(shown)
+            }
+        }
+        }())
+    }
+
+    // MARK: The message
+
+    var where_: (String, Color) {
+        switch t {
+        case ..<10.6: ("In your coding agent", C.real)
+        case ..<24.6: ("In sotto, on your Mac", C.text)
+        case ..<28.6: ("What the provider receives", C.accent)
+        case ..<31.2: ("The provider's reply", C.accent)
+        case ..<39.6: ("In sotto, on your Mac", C.text)
+        default: ("Back in your coding agent", C.success)
+        }
+    }
+
+    var card: AnyView {
+        AnyView({
+        let (label, tint) = where_
+        let providerView = window(t, 24.6, 28.6, fade: 0.3)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Circle().fill(tint).frame(width: 12, height: 12)
+                Text(label).font(.system(size: 22, weight: .semibold)).foregroundStyle(C.text)
+                Spacer()
+                if providerView > 0 {
+                    Label("0 real values", systemImage: "checkmark.shield.fill").font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(C.success).opacity(providerView)
+                }
+                if t > 39.8 {
+                    Label("ran with the real values", systemImage: "checkmark.circle.fill").font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(C.success).opacity(p(t, 40.6, 41.2))
+                }
+            }
+            .padding(.bottom, 26)
+            ZStack(alignment: .topLeading) {
+                lines(request, appear: [6.4, 7.1, 7.8, 8.5], phase: .request).opacity(1 - p(t, 28.4, 28.9))
+                lines(reply, appear: [29.2, 29.8, 30.4, 31.0], phase: .reply).opacity(p(t, 28.9, 29.2))
+                scanLine
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(34)
+        .frame(width: 1110, height: 470, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(C.surface)
+            .shadow(color: .black.opacity(0.06), radius: 16, y: 6))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(C.accent.opacity(providerView), lineWidth: 3))
+        .offset(x: 50, y: 420)
+        .opacity(p(t, 5.6, 6.3))
+        }())
+    }
+
+    var scanLine: AnyView {
+        AnyView({
+        let k = p(t, 12.4, 14.4)
+        return LinearGradient(colors: [C.accent.opacity(0), C.accent.opacity(0.35), C.accent.opacity(0)], startPoint: .leading, endPoint: .trailing)
+            .frame(width: 140, height: 300)
+            .offset(x: lerp(-140, 1040, k))
+            .opacity(window(t, 12.3, 14.6, fade: 0.2))
+        }())
+    }
+
+    enum Phase { case request, reply }
+
+    /// How masked a value looks: 0 real, 1 placeholder.
+    func masked(_ i: Int, _ phase: Phase) -> Double {
+        let d = Double(i)
+        return phase == .request ? p(t, 18.6 + d * 1.3, 19.4 + d * 1.3) : 1 - p(t, 33.6 + d * 1.4, 34.4 + d * 1.4)
+    }
+
+    /// How strongly a value is highlighted: found (request), or being restored (reply).
+    func highlight(_ i: Int, _ phase: Phase) -> Double {
+        let d = Double(i)
+        return phase == .request ? p(t, 14.2 + d * 1.1, 14.6 + d * 1.1) * (1 - p(t, 27.8, 28.4))
+                                 : window(t, 33.2 + d * 1.4, 36.2 + d * 1.4, fade: 0.4) + p(t, 39.6, 40.2) * 0.6
+    }
+
+    func lines(_ rows: [[Piece]], appear: [Double], phase: Phase) -> AnyView {
+        AnyView({
+        VStack(alignment: .leading, spacing: 34) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, piece in
+                        switch piece {
+                        case .text(let s, let color): Text(s).foregroundStyle(color)
+                        case .value(let i): valueView(i, phase)
+                        }
+                    }
+                }
+                .font(.system(size: codeSize, design: .monospaced))
+                .fixedSize()
+                .opacity(p(t, appear[r], appear[r] + 0.5))
+                .offset(x: lerp(-16, 0, p(t, appear[r], appear[r] + 0.5)))
+            }
+        }
+        }())
+    }
+
+    func valueView(_ i: Int, _ phase: Phase) -> AnyView {
+        AnyView({
+        let v = values[i]
+        let m = masked(i, phase)
+        let width = lerp(CGFloat(v.real.count) * charWidth, CGFloat(v.placeholder.count) * charWidth, m)
+        let glow = highlight(i, phase)
+        let tint = m > 0.5 ? C.accent : C.real
+        return ZStack(alignment: .leading) {
+            Text(v.real).foregroundStyle(C.real).opacity(1 - m)
+            Text(v.placeholder).foregroundStyle(C.accent).opacity(m)
+        }
+        .fixedSize()
+        .frame(width: width, alignment: .leading)
+        .clipped()
+        .padding(.horizontal, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill((m > 0.5 ? C.accentSoft : C.realSoft).opacity(min(1, glow * 1.6))))
+        .overlay(alignment: .topLeading) {
+            if phase == .request {
+                Text(v.tag).font(.system(size: 15, weight: .semibold)).foregroundStyle(tint)
+                    .fixedSize().offset(y: -24).opacity(glow)
+            } else {
+                Text("restored from the vault").font(.system(size: 15, weight: .semibold)).foregroundStyle(C.real)
+                    .fixedSize().offset(y: -24).opacity(window(t, 33.4 + Double(i) * 1.4, 36 + Double(i) * 1.4, fade: 0.4))
+            }
+        }
+        }())
+    }
+
+    // MARK: The vault
+
+    var vault: AnyView {
+        AnyView({
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.fill").font(.system(size: 22)).foregroundStyle(C.accent)
+                Text("Vault").font(.system(size: 24, weight: .semibold)).foregroundStyle(C.text)
+            }
+            Text("In sotto's memory only. Never sent, cleared when sotto exits.")
+                .font(.system(size: 17)).foregroundStyle(C.secondary).padding(.top, 6).padding(.bottom, 26)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(0..<values.count, id: \.self) { i in
+                let shown = p(t, 18.6 + Double(i) * 1.3, 19.2 + Double(i) * 1.3) * (1 - p(t, 42, 42.6))
+                let restoring = window(t, 33.4 + Double(i) * 1.4, 35.6 + Double(i) * 1.4, fade: 0.4)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(values[i].placeholder).font(.system(size: 19, design: .monospaced)).foregroundStyle(C.accent)
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.turn.down.right").font(.system(size: 15)).foregroundStyle(C.secondary)
+                        Text(String(repeating: "●", count: 10)).font(.system(size: 12)).foregroundStyle(C.real.opacity(0.75))
+                        Text("the real value").font(.system(size: 16)).foregroundStyle(C.secondary)
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 14).fill(C.realSoft.opacity(restoring)))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(C.real.opacity(restoring), lineWidth: 2))
+                .opacity(shown)
+                .offset(x: lerp(30, 0, shown))
+                .padding(.bottom, 10)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(30)
+        .frame(width: 600, height: 470, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(C.surface)
+            .shadow(color: .black.opacity(0.06), radius: 16, y: 6))
+        .offset(x: 1220, y: 420)
+        .opacity(p(t, 5.6, 6.3))
+        }())
+    }
+
+    // MARK: Captions
+
+    var caption: AnyView {
+        AnyView({
+        let lines: [(Double, Double, String)] = [
+            (4.4, 9.8, "sotto sits between your coding agent and its model provider, on your Mac."),
+            (9.8, 12.2, "Your agent sends a request. It holds a token, a password and an email."),
+            (12.2, 18.2, "1  Detect: 96 rules and a local model find the sensitive values."),
+            (18.2, 24.2, "2  Mask: each value becomes a placeholder. The real value stays in the vault."),
+            (24.2, 28.6, "3  Send: the provider sees placeholders only."),
+            (28.6, 32.8, "The model answers with the placeholders, even in the commands it runs."),
+            (32.8, 39.2, "4  Restore: sotto puts the real values back, on your Mac."),
+            (39.2, 42.6, "Your agent works with the real values. The provider never saw them."),
+        ]
+        return ZStack {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, c in
+                Text(c.2).font(.system(size: 32, weight: .medium)).foregroundStyle(C.text).opacity(window(t, c.0, c.1, fade: 0.35))
+            }
+        }
+        .frame(width: W).offset(y: 952)
+        }())
+    }
+}
+
+// MARK: - Encoding
+
+@MainActor
+func render(to url: URL) throws {
+    try? FileManager.default.removeItem(at: url)
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+    let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: Int(W), AVVideoHeightKey: Int(H),
+        AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000, AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel],
+    ])
+    input.expectsMediaDataInRealTime = false
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        kCVPixelBufferWidthKey as String: Int(W), kCVPixelBufferHeightKey as String: Int(H),
+    ])
+    writer.add(input)
+    writer.startWriting()
+    writer.startSession(atSourceTime: .zero)
+
+    let frames = Int(DURATION * Double(FPS))
+    for n in 0..<frames {
+        let renderer = ImageRenderer(content: Frame(t: Double(n) / Double(FPS)).view.environment(\.colorScheme, .light))
+        renderer.proposedSize = ProposedViewSize(width: W, height: H)
+        renderer.scale = 1
+        guard let image = renderer.cgImage else { throw NSError(domain: "flow", code: 1) }
+        while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.005) }
+        var buffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+        guard let buffer else { throw NSError(domain: "flow", code: 2) }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: Int(W), height: Int(H), bitsPerComponent: 8,
+                            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: W, height: H))
+        CVPixelBufferUnlockBaseAddress(buffer, [])
+        adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(n), timescale: FPS))
+        if n % 150 == 0 { print("frame \(n)/\(frames)") }
+    }
+    input.markAsFinished()
+    let done = DispatchSemaphore(value: 0)
+    writer.finishWriting { done.signal() }
+    done.wait()
+    if writer.status != .completed { throw writer.error ?? NSError(domain: "flow", code: 3) }
+}
+
+/// `--frames dir t1 t2 …` writes stills instead, to check a moment without encoding the video.
+@MainActor
+func stills(_ dir: URL, _ times: [Double]) throws {
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    for t in times {
+        let renderer = ImageRenderer(content: Frame(t: t).view.environment(\.colorScheme, .light))
+        renderer.proposedSize = ProposedViewSize(width: W, height: H)
+        renderer.scale = 1
+        guard let image = renderer.cgImage else { throw NSError(domain: "flow: no image at \(t)", code: 1) }
+        guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { continue }
+        try png.write(to: dir.appending(path: String(format: "t%05.1f.png", t)))
+    }
+}
+
+let args = CommandLine.arguments
+MainActor.assumeIsolated {
+    // SwiftUI renders through AppKit: a command-line process needs an application object first.
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    do {
+        if args.count > 2 && args[1] == "--frames" {
+            try stills(URL(fileURLWithPath: args[2]), args.dropFirst(3).compactMap(Double.init))
+        } else {
+            let out = URL(fileURLWithPath: args.count > 1 ? args[1] : "sotto-flow.mp4")
+            try render(to: out)
+            print("wrote \(out.path)")
+        }
+    } catch {
+        FileHandle.standardError.write("flow: \(error)\n".data(using: .utf8)!)
+        exit(1)
+    }
+}

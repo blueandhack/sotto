@@ -13,6 +13,9 @@ bench/data/pii.jsonl
 bench/data/long.jsonl
 bench/data/extra.jsonl
 
+# Rendered by docs/video/flow.swift; regenerate rather than commit a 7 MB binary.
+docs/video/*.mp4
+
 # Mac app build output
 mac/.build/
 mac/build/
