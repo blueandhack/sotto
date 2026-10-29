@@ -12,12 +12,11 @@ struct SetupCard: View {
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 0) {
-                    step(1, "Local model", done: engine.hasModel,
-                         detail: engine.hasModel ? "Privacy Filter, on this Mac" : "1.6 GB, downloaded once and checked against its SHA-256") {
+                    step(1, "Local model", done: engine.canScan, detail: modelDetail) {
                         if let p = engine.download {
                             ProgressView(value: p).frame(width: 120)
                             Text("\(Int(p * 100))%").font(.system(size: 11.5)).monospacedDigit().foregroundStyle(Theme.secondary)
-                        } else if !engine.hasModel {
+                        } else if !engine.canScan {
                             PillButton(title: "Download", icon: "arrow.down.circle", prominent: true) { Task { await engine.downloadModel() } }
                         }
                     }
@@ -27,8 +26,8 @@ struct SetupCard: View {
                         } else if engine.serviceRunning {
                             PillButton(title: "Stop") { Task { await engine.stopService() } }
                         } else {
-                            PillButton(title: "Start", icon: "play.fill", prominent: engine.hasModel) { Task { await engine.startService() } }
-                                .disabled(!engine.hasModel).opacity(engine.hasModel ? 1 : 0.5)
+                            PillButton(title: "Start", icon: "play.fill", prominent: engine.canScan) { Task { await engine.startService() } }
+                                .disabled(!engine.canScan).opacity(engine.canScan ? 1 : 0.5)
                         }
                     }
                     step(3, "Protect your coding agents", done: engine.anyProtected,
@@ -50,6 +49,11 @@ struct SetupCard: View {
                 }
             }
         }
+    }
+
+    private var modelDetail: String {
+        if !engine.modelOn { return "Off: the rules work alone (Settings › Detector)" }
+        return engine.hasModel ? "Privacy Filter, on this Mac" : "1.6 GB, downloaded once and checked against its SHA-256"
     }
 
     private var serviceDetail: String {
@@ -105,7 +109,7 @@ private struct ClientRow: View {
             }
             Spacer(minLength: 8)
             if installed && c?.error == nil {
-                let canTurnOn = engine.serviceRunning && engine.hasModel
+                let canTurnOn = engine.serviceRunning && engine.canScan
                 Switch(isOn: on, enabled: !engine.busy && (on || canTurnOn)) { new in
                     Task { await engine.setProtection(new, client: id) }
                 }
@@ -163,7 +167,7 @@ struct ProtectionRow: View {
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(Theme.secondary)
             }
             Spacer()
-            if engine.hasModel && engine.serviceRunning {
+            if engine.canScan && engine.serviceRunning {
                 PillButton(title: "Agents", action: openSetup)  // one switch per agent, in Settings
             } else if engine.isBundled {
                 PillButton(title: "Set up", prominent: true, action: openSetup)
@@ -191,7 +195,7 @@ struct ProtectionRow: View {
         if names.count > 1 { return names.joined(separator: ", ") }
         if names.count == 1 { return "Every session goes through sotto" }
         if !engine.isBundled { return "Use sotto claude or sotto codex in a terminal" }
-        return engine.hasModel && engine.serviceRunning ? "Only sotto claude and sotto codex are scanned" : "Finish setup to protect every session"
+        return engine.canScan && engine.serviceRunning ? "Only sotto claude and sotto codex are scanned" : "Finish setup to protect every session"
     }
 
     private var color: Color {

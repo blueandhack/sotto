@@ -39,8 +39,12 @@ def run() -> int:
     from .detect.pfserve import PfServe, find_binary, find_model
 
     binary, model = find_binary(), find_model()
-    _check(r, OK if binary else FAIL, f"pf-serve {binary}" if binary else "pf-serve missing: run native/pf-serve/build.sh")
-    _check(r, OK if model else FAIL, f"model {model}" if model else "model missing: run `sotto setup`")
+    needed = cfg is None or cfg.model  # with detect.model = false, the rules work alone
+    if not needed:
+        _check(r, OK, "model off: the rules work alone (`sotto model on` adds the local model)")
+    missing = FAIL if needed else WARN
+    _check(r, OK if binary else missing, f"pf-serve {binary}" if binary else "pf-serve missing: run native/pf-serve/build.sh")
+    _check(r, OK if model else missing, f"model {model}" if model else "model missing: run `sotto setup`")
     if binary and model:
         pf = None
         try:

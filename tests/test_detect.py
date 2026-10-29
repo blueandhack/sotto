@@ -213,7 +213,7 @@ def test_real_name_survives_trimming(rules):
     text = "OWNER=Priya Raman <priya.raman@corp.internal>"
     a = text.index("=Priya")
     pf = _FakePF([Span(a, a + len("=Priya Raman"), "PERSON", 0.9, "pf")])
-    assert values(text, Pipeline(rules, pf, pii=True).detect(text)) == ["Priya Raman"]
+    assert values(text, Pipeline(rules, pf, pii=True).detect(text)) == ["Priya Raman", "priya.raman@corp.internal"]
 
 
 @pytest.mark.parametrize("text, name", [

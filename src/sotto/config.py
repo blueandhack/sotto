@@ -6,6 +6,7 @@
 
     [detect]
     pii = false            # also mask personal data
+    model = true           # the local model after the rules; false: the rules alone (faster, lighter, lower recall)
     observe = false        # count what would be masked, but forward every request unchanged
     pass = []              # types never masked, e.g. ["PERSON", "DATE"]
 
@@ -37,7 +38,7 @@ from .restore import DEFAULT_POLICY
 
 _SCHEMA = {
     "server": {"port": int, "upstream": str},
-    "detect": {"pii": bool, "observe": bool, "pass": list},
+    "detect": {"pii": bool, "model": bool, "observe": bool, "pass": list},
     "allowlist": {"strings": list, "patterns": list},
     "rules": {"mask": list},
     "log": {"level": str},
@@ -54,6 +55,7 @@ class Config:
     port: int = 7788
     upstream: str = "https://api.anthropic.com"
     pii: bool = False
+    model: bool = True
     observe: bool = False
     pass_types: list[str] = field(default_factory=list)
     mask_rules: list[dict] = field(default_factory=list)
@@ -97,6 +99,7 @@ def load(path: Path | None = None) -> Config:
     if not re.match(r"https?://", cfg.upstream):
         raise ConfigError(f"{path}: server.upstream must be an http(s) URL")
     cfg.pii = detect.get("pii", cfg.pii)
+    cfg.model = detect.get("model", cfg.model)
     cfg.observe = detect.get("observe", cfg.observe)
     from .detect import TYPES
 

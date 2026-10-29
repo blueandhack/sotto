@@ -10,10 +10,21 @@ struct Detection: Decodable, Sendable {
     var sources: [String: Int] = [:]
     var rules: [Rule] = []
     var pass: [String] = []
+    /// The model is running. Nil from services older than `sotto model`.
+    var model: Bool?
+    /// The model was asked for (detect.model) but did not load: why. The rules keep scanning.
+    var modelError: String?
 
+    /// A funnel count by the report's name (`candidates_rules`). The live feed is decoded with
+    /// convertFromSnakeCase, so its keys arrive as `candidatesRules`: look up both.
     subscript(key: String) -> Int? {
-        get { funnel[key] }
+        get { funnel[key] ?? funnel[Self.camel(key)] }
         set { funnel[key] = newValue }
+    }
+
+    private static func camel(_ key: String) -> String {
+        let parts = key.split(separator: "_")
+        return ([parts.first.map(String.init) ?? ""] + parts.dropFirst().map { $0.capitalized }).joined()
     }
 
     init() {}
@@ -28,6 +39,8 @@ struct Detection: Decodable, Sendable {
         sources = (try? c.decode([String: Int].self, forKey: AnyKey("sources"))) ?? [:]
         rules = (try? c.decode([Rule].self, forKey: AnyKey("rules"))) ?? []
         pass = (try? c.decode([String].self, forKey: AnyKey("pass"))) ?? []
+        model = try? c.decode(Bool.self, forKey: AnyKey("model"))
+        modelError = (try? c.decode(String.self, forKey: AnyKey("modelError"))) ?? (try? c.decode(String.self, forKey: AnyKey("model_error")))
     }
 
     struct AnyKey: CodingKey {

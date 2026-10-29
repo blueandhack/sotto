@@ -19,7 +19,7 @@ def main() -> None:
 def scan(
     paths: list[str] = typer.Argument(..., help="Files to scan, or - for stdin."),
     pii: bool = typer.Option(False, help="Also report personal data."),
-    rules_only: bool = typer.Option(False, help="L1 rules only: fast, no model, lower recall."),
+    rules_only: bool = typer.Option(False, help="Rules only for this scan: fast, no model, lower recall."),
 ) -> None:
     """Report secrets in files without showing them. Exits 1 if anything is found."""
     import sys
@@ -62,7 +62,7 @@ def _pipeline_or_exit(pii: bool, rules_only: bool, who: str):
 
     cfg = _config()
     try:
-        return default_pipeline(pii=pii or cfg.pii, rules_only=rules_only, allow_strings=cfg.allow_strings,
+        return default_pipeline(pii=pii or cfg.pii, rules_only=rules_only or not cfg.model, allow_strings=cfg.allow_strings,
                                 allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
     except ModelUnavailable as e:
         typer.echo(f"sotto {who}: {e}", err=True)
@@ -155,7 +155,7 @@ def serve(
     port: int = typer.Option(None, help="Port on 127.0.0.1 (default: config, else 7788)."),
     upstream: str = typer.Option(None, help="Where scanned requests go (default: config, else api.anthropic.com)."),
     pii: bool = typer.Option(None, "--pii/--no-pii", help="Also mask personal data (default: config)."),
-    rules_only: bool = typer.Option(False, help="L1 rules only (lower recall; for debugging)."),
+    rules_only: bool = typer.Option(False, help="Rules only for this run, whatever detect.model says (`sotto model`)."),
     log_file: bool = typer.Option(False, help="Log to ~/.config/sotto/sotto.log instead of stderr (for the background service)."),
 ) -> None:
     """Run the proxy on 127.0.0.1. Point Claude Code at it with ANTHROPIC_BASE_URL, or `sotto protect`."""
@@ -186,7 +186,7 @@ def serve(
 
 
 @app.command()
-def selftest(rules_only: bool = typer.Option(False, help="Test with L1 rules only.")) -> None:
+def selftest(rules_only: bool = typer.Option(False, help="Test with the rules only.")) -> None:
     """Send a canary secret through the proxy to a local mock upstream; fail if it leaks."""
     import anyio
 
@@ -285,6 +285,35 @@ def observe(action: str = typer.Argument("status", help="on, off, or status")) -
         raise typer.Exit(2)
     typer.echo("observe only: requests go to Anthropic UNMASKED; sotto only counts what it would mask" if on
                else "masking: sensitive values are replaced before requests leave this Mac", err=True)
+    if action != "status":
+        typer.echo("Running proxies switch on their next request.", err=True)
+
+
+@app.command()
+def model(action: str = typer.Argument("status", help="on, off, or status")) -> None:
+    """The local model after the rules (on, the default), or the rules alone (off): faster and about
+    1.7 GB lighter, but they find only values with a known shape or a telling name."""
+    from .config import ConfigError, set_detect_flag
+    from .detect.pfserve import find_binary, find_model
+
+    cfg = _config()
+    if action == "on" and not (find_binary() and find_model()):
+        typer.echo("sotto model: the model is not downloaded: run `sotto setup` first", err=True)
+        raise typer.Exit(2)
+    if action in ("on", "off"):
+        try:
+            set_detect_flag("model", action == "on", cfg.path)
+        except (ConfigError, OSError) as e:
+            typer.echo(f"sotto model: {e}", err=True)
+            raise typer.Exit(1)
+        on = action == "on"
+    elif action == "status":
+        on = cfg.model
+    else:
+        typer.echo("sotto model: use on, off or status", err=True)
+        raise typer.Exit(2)
+    typer.echo("rules and the local model: secrets and personal data the rules alone would miss" if on
+               else "rules only: names, addresses, and secrets with no known shape or telling name go out unmasked", err=True)
     if action != "status":
         typer.echo("Running proxies switch on their next request.", err=True)
 
@@ -486,7 +515,7 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
     binary, model = find_binary(), find_model()
     out = {"model": str(model) if model else None, "model_size": MODEL_SIZE, "pf_serve": str(binary) if binary else None,
            "protect": prot, "port": cfg.port, "serve_running": shared_serve_port(cfg) is not None,
-           "observe": cfg.observe, "clients": clients, "pii": cfg.pii, "pass": cfg.pass_types, "rules": _rules_json(cfg),
+           "observe": cfg.observe, "model_on": cfg.model, "clients": clients, "pii": cfg.pii, "pass": cfg.pass_types, "rules": _rules_json(cfg),
            "excluded": excluded_projects()}
     typer.echo(json.dumps(out) if as_json else "\n".join(f"{k}: {v}" for k, v in out.items()))
 

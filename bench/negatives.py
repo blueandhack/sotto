@@ -453,3 +453,53 @@ Action cache key: 1c9e7a5b3d2f8e6a4c0b9d7f5e3a1c8b6d4f2a0e9c7b5d3f1a8e6c4b2d0f9e
 curl -H "X-Api-Key: $ACME_API_KEY" https://api.example.com/v1/ping
 Keys start with ak_ and are 40 characters long."""),
 ]
+
+# Written Oct 29, 2026, before the personal-data rules, the CLI-flag and prose rules, and the new
+# provider rules existed: text shaped like an email, a phone number, an SSN, a date of birth, a
+# secret flag or a key in prose, that is none of them.
+HOLDOUT5_NEGATIVES = [
+    ("git-remotes", """$ git remote -v
+origin  git@github.com:acme/checkout-api.git (fetch)
+upstream  ssh://git@gitlab.acme.dev:2222/platform/checkout-api.git (push)
+$ scp build.tar.gz deploy@build-01.acme.dev:/srv/releases/"""),
+    ("package-specifiers", """$ pnpm add react@18.3.1 @tanstack/react-query@5.59.0 zod@3.23.8
+FROM node:20.18-alpine@sha256:24fb6aa7020d9a20b00d6da6d1714187c45ed00d1eb4adb01395843a338b9372
+pip install "requests>=2.32" uvicorn[standard]@0.32.0"""),
+    ("retina-assets", """Assets.xcassets/AppIcon.appiconset/icon@2x.png
+public/images/logo@3x.webp
+src/components/Hero.tsx imports ./hero@2x.jpg"""),
+    ("matmul", """def forward(self, x):
+    h = x@self.weight.T + self.bias
+    return torch.relu(h)@self.proj"""),
+    ("connection-urls", """DATABASE_URL=postgres://app:${DB_PASSWORD}@db.prod.internal:5432/orders
+REDIS_URL=redis://:$REDIS_PASSWORD@cache.prod.internal:6379/0"""),
+    ("role-addresses", """Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+From: GitHub <noreply@github.com>
+Reply-To: support@example.com"""),
+    ("versions-and-ips", """kubectl 1.31.2, server 1.30.6-eks-7f9249a
+upstream 10.20.30.40:8443, resolver 192.168.100.200
+build 2026.10.29.1432, ISBN 978-0-13-468599-1"""),
+    ("numeric-ids", """order 4155552671 shipped in 3 boxes
+invoice INV-2026-104-5531, ticket 212-555-0147
+timestamps 1730193600 and 1730193600123 (s and ms)"""),
+    ("ssn-docs", """# validate_ssn() rejects area numbers 000, 666 and 900-999.
+assert not validate_ssn("000-12-3456")
+assert not validate_ssn("666-45-6789")"""),
+    ("dob-validation", """DOB field validation: reject dates after 2026-10-29 (today).
+born_on is optional; the birthday reminder job runs at 09:00 UTC."""),
+    ("cli-flags", """docker login ghcr.io -u acme-bot --password-stdin < token.txt
+gh auth login --with-token < ~/.config/gh/hosts.token
+vault kv get -field=password --secret-name prod/db
+aws secretsmanager get-secret-value --secret-id prod/checkout/db --query SecretString
+kubectl create secret generic app-secrets --from-env-file=./secrets.env --token-ttl 3600"""),
+    ("cli-flag-references", """./deploy.sh --api-key "$ACME_API_KEY" --auth-type oauth --password-file /run/secrets/db
+terraform apply -var "token=${var.token}" --auth none"""),
+    ("secrets-in-prose", """The API key is stored in 1Password under Engineering/Production.
+The token is valid for 3600 seconds and the password is the same one you use for SSO.
+The secret is that the cache key is derived from the request path."""),
+    ("key-is-identifier", """The primary key is customer_id_and_created_at_composite and the sort key is created_at.
+The experiment key is checkout_v2_rollout_2026_q4."""),
+    ("cookie-names", """Set-Cookie: __Host-csrf=1; Path=/; Secure; SameSite=Strict
+Set-Cookie: session=; Max-Age=0; Path=/
+Cookie: theme=dark; locale=en-US; tz=America%2FLos_Angeles"""),
+]

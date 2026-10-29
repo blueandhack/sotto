@@ -25,6 +25,7 @@ class Rule:
     type: str = "SECRET"
     filters: str | bool = "placeholder"
     prose_guard: bool = False
+    min_classes: int = 0  # of lowercase, uppercase, digits, other: below this the value is a word, not a secret
     user: bool = False  # written by the user ([rules] mask), reported as user:<name>
 
 
@@ -57,6 +58,12 @@ def shannon_entropy(value: str) -> float:
     if n == 0:
         return 0.0
     return -sum(c / n * math.log2(c / n) for c in Counter(value).values())
+
+
+def char_classes(value: str) -> int:
+    """How many of lowercase, uppercase, digits and other characters a value uses."""
+    return (any(c.islower() for c in value) + any(c.isupper() for c in value) + any(c.isdigit() for c in value)
+            + any(not c.isalnum() for c in value))
 
 
 def luhn_valid(digits: str) -> bool:
@@ -119,6 +126,7 @@ class RulesDetector:
                 type=r.get("type", "SECRET"),
                 filters=r.get("filters", "placeholder"),
                 prose_guard=r.get("prose_guard", False),
+                min_classes=r.get("min_classes", 0),
             )
             for r in cfg.get("rule", [])
         ]
@@ -127,6 +135,7 @@ class RulesDetector:
         f = cfg.get("filters", {})
         self._placeholder_filters = [re.compile(f[k]) for k in ("stopwords", "placeholder", "repeated", "public") if k in f]
         self._all_filters = self._placeholder_filters + [re.compile(f[k]) for k in ("reference", "numeric") if k in f]
+        self._prose_filters = self._all_filters + [re.compile(f[k]) for k in ("identifier",) if k in f]
         self.entropy = cfg.get("entropy", {"enabled": False})
         if self.entropy.get("enabled"):
             self._skip_before = re.compile(self.entropy["skip_before"])
@@ -147,13 +156,17 @@ class RulesDetector:
     def looks_like_placeholder(self, value: str, level: str | bool = "placeholder") -> bool:
         if not level:
             return False
-        filters = self._all_filters if level == "all" else self._placeholder_filters
+        filters = {"all": self._all_filters, "prose": self._prose_filters}.get(level, self._placeholder_filters)
         return any(p.search(value) for p in filters)
 
-    def detect(self, text: str) -> list[Span]:
+    def detect(self, text: str, personal: bool = True) -> list[Span]:
+        """Spans over `text`. With `personal` off, only secrets and your own rules: the pipeline
+        would drop personal data anyway."""
         lowered = text.lower()
         spans: list[Span] = []
         for rule in self.rules + self.user_rules:
+            if not personal and rule.type != "SECRET" and not rule.user:
+                continue
             if rule.keywords and not any(k in lowered for k in rule.keywords):
                 continue
             for m in rule.regex.finditer(text):
@@ -165,12 +178,14 @@ class RulesDetector:
                     continue
                 if rule.prose_guard and _PROSE_WORD.fullmatch(m.group(rule.group)) and _PROSE_NEXT.match(text, end):
                     continue
+                if rule.min_classes and char_classes(m.group(rule.group)) < rule.min_classes:
+                    continue
                 spans.append(Span(start, end, rule.type, rule.confidence, f"user:{rule.id}" if rule.user else f"{SOURCE}:{rule.id}"))
         if self.entropy.get("enabled"):
             spans.extend(self._entropy_spans(text))
-        if self.luhn.get("enabled"):
+        if personal and self.luhn.get("enabled"):
             spans.extend(self._card_spans(text))
-        if self.iban.get("enabled"):
+        if personal and self.iban.get("enabled"):
             spans.extend(self._iban_spans(text))
         return self.allowlist.filter(text, spans)
 

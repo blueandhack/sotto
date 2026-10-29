@@ -70,3 +70,25 @@ struct ModeCard: View {
         }
     }
 }
+
+/// The rules alone, or the rules and the local model (`sotto model`).
+struct DetectorCard: View {
+    var engine: Engine
+    /// From the running proxy's feed: the model was asked for but did not load, and why.
+    var modelError: String?
+
+    var body: some View {
+        let on = engine.modelOn
+        Card(title: "Detector", subtitle: on ? "Rules, then the local model: also names, addresses, and secrets with no known shape"
+                                             : "Rules only: faster and about 1.7 GB lighter, but names, addresses and unlabeled secrets go out unmasked") {
+            VStack(alignment: .leading, spacing: 8) {
+                Segmented(options: [(true, "Rules + model"), (false, "Rules only")],
+                          selection: Binding(get: { on }, set: { new in Task { await engine.setModel(new) } }))
+                    .disabled(!engine.isBundled || engine.busy || engine.download != nil)
+                if on, let modelError {
+                    Text(modelError).font(.system(size: 11.5)).foregroundStyle(Theme.danger).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}

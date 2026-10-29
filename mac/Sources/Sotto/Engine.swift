@@ -24,6 +24,8 @@ final class Engine {
         var serveRunning: Bool
         var excluded: [Excluded] = []
         var observe: Bool?
+        /// `detect.model`: the local model after the rules (nil from older engines: on).
+        var modelOn: Bool?
         var pii: Bool?
         var pass: [String]?
         var rules: Rules?
@@ -89,12 +91,16 @@ final class Engine {
     private(set) var previewing = false
     var isBundled: Bool { cli != nil || previewing }
     var hasModel: Bool { status?.model != nil }
+    /// The model is wanted (`sotto model on`, the default), or the rules work alone.
+    var modelOn: Bool { status?.modelOn ?? true }
+    /// Enough to scan: the model downloaded, or the rules alone.
+    var canScan: Bool { hasModel || !modelOn }
     var serviceRunning: Bool { status?.serveRunning == true }
     var protected: Bool { status?.protect.on == true }
 
     func client(_ id: String) -> Client? { id == "claude" ? Client(installed: true, on: protected) : status?.clients?[id] }
     var anyProtected: Bool { protected || (status?.clients?.values.contains { $0.on == true } ?? false) }
-    var setupDone: Bool { hasModel && serviceRunning && protected }
+    var setupDone: Bool { canScan && serviceRunning && protected }
 
     func start() {
         guard task == nil, isBundled else { return }
@@ -173,6 +179,20 @@ final class Engine {
     func setObserve(_ on: Bool) async {
         await act {
             let out = try await self.run(["observe", on ? "on" : "off"])
+            if out.code != 0 { throw EngineError(out.lastLine) }
+        }
+    }
+
+    /// The rules alone, or the rules and the local model (`sotto model`). Turning the model on
+    /// downloads it first if needed. Running proxies pick it up on their next request.
+    func setModel(_ on: Bool) async {
+        if on && !hasModel {
+            await downloadModel()
+            await refresh()
+            guard hasModel else { return }
+        }
+        await act {
+            let out = try await self.run(["model", on ? "on" : "off"])
             if out.code != 0 { throw EngineError(out.lastLine) }
         }
     }

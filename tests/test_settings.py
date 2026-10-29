@@ -123,3 +123,116 @@ def test_cli_types_needs_yes_for_secrets(tmp_path, monkeypatch):
     assert data["mask"][0]["type"] == "ACCOUNT" and data["allow_strings"] == ["acme-test-key"]
     assert run("rules", "remove", "mask", "0").exit_code == 0
     assert config_mod.load(tmp_path / ".config" / "sotto" / "config.toml").mask_rules == []
+
+
+# --- The model on or off (detect.model) ---------------------------------------------------
+
+
+class Closable(FakeModel):
+    closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def test_model_setting_is_read_and_checked(tmp_path):
+    path = tmp_path / "config.toml"
+    assert config_mod.load(path).model is True  # on unless turned off
+    path.write_text("[detect]\nmodel = false\n")
+    assert config_mod.load(path).model is False
+    path.write_text('[detect]\nmodel = "no"\n')
+    with pytest.raises(config_mod.ConfigError):
+        config_mod.load(path)
+
+
+def test_model_off_needs_no_model_files(tmp_path, monkeypatch):
+    from sotto import launch
+    from sotto.detect import pfserve
+
+    monkeypatch.setattr(pfserve, "find_binary", lambda: None)
+    monkeypatch.setattr(pfserve, "find_model", lambda: None)
+    path = tmp_path / "config.toml"
+    path.write_text("[detect]\nmodel = false\n")
+    proxy = launch.build_proxy(config_mod.load(path), upstream="http://up")
+    assert proxy.redactor.detector.name == "rules" and proxy.redactor.detector.pf is None
+
+
+def test_model_switches_while_running_without_dropping_a_request(tmp_path, monkeypatch):
+    import time
+
+    from sotto import launch
+    from sotto.detect import pipeline as pipeline_mod
+
+    model = Closable()
+    monkeypatch.setattr(pipeline_mod, "load_model", lambda: model)
+    path = tmp_path / "config.toml"
+    path.write_text("[detect]\npii = true\nmodel = false\n")
+    proxy = launch.build_proxy(config_mod.load(path), upstream="http://up")
+    mock = selftest.MockUpstream()
+    proxy.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=mock.app), base_url="http://up")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=proxy.app), base_url="http://127.0.0.1:7788")
+    body = {"model": "m", "max_tokens": 8, "messages": [{"role": "user", "content": "ask Priya Raman"}]}
+    pipeline = proxy.redactor.detector
+
+    def send():
+        async def go():
+            r = await client.post("/v1/messages", json=body)
+            stats = await client.get("/_sotto/stats", headers={"authorization": f"Bearer {proxy.stats_token}"})
+            return r.status_code, stats.json()
+        return anyio.run(go)
+
+    def until(cond):
+        deadline = time.monotonic() + 5
+        while not cond() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert cond()
+
+    code, stats = send()
+    assert code == 200 and b"Priya Raman" in mock.received[-1] and stats["detector"] == "rules:pii"
+    config_mod.set_detect_flag("model", True, path)
+    code, _ = send()  # served while the model loads, by the rules
+    assert code == 200
+    until(lambda: pipeline.pf is model)
+    code, stats = send()  # the same text again: scanned again, now with the model
+    assert code == 200 and b"Priya Raman" not in mock.received[-1] and stats["detector"] == "rules+pf:pii"
+    config_mod.set_detect_flag("model", False, path)
+    send()
+    until(lambda: pipeline.pf is None)
+    assert model.closed and send()[1]["detector"] == "rules:pii"
+
+
+def test_a_model_that_does_not_load_is_reported_and_the_rules_keep_scanning():
+    import threading
+
+    from sotto.detect.pipeline import ModelSwitch, ModelUnavailable
+
+    def broken():
+        raise ModelUnavailable("the Privacy Filter model is not downloaded")
+
+    p = Pipeline(RulesDetector(), None)
+    switch = ModelSwitch(p, threading.Lock(), loader=broken)
+    switch.want(True)
+    switch.thread.join()
+    assert p.pf is None and "not downloaded" in p.report()["model_error"]
+    token = "ghp_" + "Zq8vX2mN4pL7kR9tY3wB6cF1hJ5dG0sAe7Qw"
+    assert values(f"t={token}", p.detect(f"t={token}")) == [token]
+    switch.want(False)
+    switch.thread.join()
+    assert "model_error" not in p.report()
+
+
+def test_cli_model_on_needs_the_model_downloaded(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from sotto.cli import app
+    from sotto.detect import pfserve
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(pfserve, "find_model", lambda: None)
+    path = tmp_path / ".config" / "sotto" / "config.toml"
+    run = lambda *a: CliRunner().invoke(app, list(a))
+    assert run("model", "off").exit_code == 0 and config_mod.load(path).model is False
+    assert run("model", "on").exit_code == 2 and config_mod.load(path).model is False
+    monkeypatch.setattr(pfserve, "find_model", lambda: tmp_path / "model.gguf")
+    monkeypatch.setattr(pfserve, "find_binary", lambda: tmp_path / "pf-serve")
+    assert run("model", "on").exit_code == 0 and config_mod.load(path).model is True

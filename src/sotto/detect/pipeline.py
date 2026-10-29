@@ -6,7 +6,9 @@ neither cleared anything the refinement rules did not already remove (bench/resu
 
 from __future__ import annotations
 
+import logging
 import re
+import threading
 from collections import Counter
 
 from . import Span
@@ -34,11 +36,15 @@ _UNIT_AFTER = re.compile(r"(?i)\s?(?:tokens?|bytes?|[KMGT]i?B|B|ms|s|sec(?:onds?
                          r"|items?|requests?|users?|files?|words?|times|calls?|steps?|px|%)\b")
 _TIME_OF_DAY = re.compile(r"\d{1,2}:\d{2}(?::\d{2})?")
 _RESERVED_EMAIL = re.compile(r"(?i)@(?:[\w-]+\.)*(?:example\.(?:com|net|org)|test|invalid|localhost)$")  # RFC 2606
-_ROLE_EMAIL = re.compile(r"(?i)^(?:no-?reply|do-?not-?reply|notifications?|postmaster|mailer-daemon)@")  # not a person
+# Not a person: no-reply senders, and the role mailboxes of RFC 2142.
+_ROLE_EMAIL = re.compile(r"(?i)^(?:no-?reply|do-?not-?reply|notifications?|postmaster|mailer-daemon|hostmaster|webmaster"
+                         r"|abuse|noc|security|info|marketing|sales|support|help|billing)@")
 _FICTIONAL_PHONE = re.compile(r"555[-. ]?01\d\d$")  # NANP reserves 555-0100..0199 for fiction
 _IDENTIFIER_WORD = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*")  # ops-admin, setup.sh, etl
 _BIRTH_BEFORE = re.compile(r"(?i)(?<![a-z])(?:born|birth|birthday|dob|d\.o\.b)(?![a-z])")  # matches date_of_birth too
 _PII_EDGE = "/\\:;,.'\"`()[]{}<>|="
+
+log = logging.getLogger("sotto")
 
 
 class Pipeline:
@@ -58,21 +64,34 @@ class Pipeline:
         self.by_rule: Counter[str] = Counter()  # rules:<id> or user:<name>
         self.pass_types: frozenset[str] = frozenset()  # types never masked ([detect] pass)
         self.generation = 0
-        parts = [p for p, on in (("rules", rules), (getattr(pf, "name", "pf"), pf)) if on]
-        flags = [f for f, on in (("pii", pii), ("raw", not refine), ("rawpii", not refine_pii)) if on]
-        self.name = "+".join(parts) + "".join(f":{f}" for f in flags)
+        self.model_error: str | None = None  # why the model asked for (detect.model) is not running
+        self.name = self._label()
+
+    def _label(self) -> str:
+        parts = [p for p, on in (("rules", self.rules), (getattr(self.pf, "name", "pf"), self.pf)) if on]
+        flags = [f for f, on in (("pii", self.pii), ("raw", not self.refine), ("rawpii", not self.refine_pii_spans)) if on]
+        return "+".join(parts) + "".join(f":{f}" for f in flags)
+
+    def set_model(self, pf) -> None:
+        """Turn the model on (a started PfServe) or off (None) while running. Bumps `generation`,
+        so text scanned without the model is scanned again with it."""
+        self.pf = pf
+        self.name = self._label()
+        self.generation += 1
 
     def detect(self, text: str) -> list[Span]:
         spans: list[Span] = []
         if self.rules:
-            found = self.rules.detect(text)
+            found = self.rules.detect(text, personal=self.pii)
             self.funnel["candidates_rules"] += len(found)
             spans += found
         self.funnel["candidates_model"] += 0
         spans += self.model_spans(text)
         if self.pii and self.refine_pii_spans:
+            # The rules' personal data gets the same noise checks as the model's: reserved
+            # addresses, fictional numbers. Your own rules are kept as written.
             spans = [t for s in spans if (t := self.trim_pii(text, s)) is not None
-                     and (t.type == "SECRET" or t.source.startswith(("rules", "user:")) or self.keep_pii(text, t))]
+                     and (t.type == "SECRET" or t.source.startswith("user:") or self.keep_pii(text, t))]
         if not self.pii:  # your own rules apply whatever their type
             spans = [s for s in spans if s.type == "SECRET" or s.source.startswith("user:")]
         refined = len(spans)
@@ -121,15 +140,19 @@ class Pipeline:
 
         types = {t: {stage: self.by_type[(t, stage)] for stage in ("found", "allowed", "passed", "masked")} for t in TYPES}
         top = [{"rule": k.split(":", 1)[1], "user": k.startswith("user:"), "n": n} for k, n in self.by_rule.most_common(8)]
-        return {**self.funnel, "types": types, "sources": dict(self.by_source), "rules": top,
-                "pass": sorted(self.pass_types)}
+        out = {**self.funnel, "types": types, "sources": dict(self.by_source), "rules": top,
+               "pass": sorted(self.pass_types), "model": self.pf is not None}
+        if self.model_error:
+            out["model_error"] = self.model_error
+        return out
 
     def model_spans(self, text: str) -> list[Span]:
         """The model's spans: secrets refined, personal data only when enabled."""
         out: list[Span] = []
-        if not self.pf:
+        pf = self.pf
+        if not pf:
             return out
-        for s in self.pf.detect(text):
+        for s in pf.detect(text):
             if s.type == "ACCOUNT" and self.refine and self.credential_not_account(text, s):
                 s = Span(s.start, s.end, "SECRET", s.confidence, s.source)
             if s.type != "SECRET" and not self.pii:
@@ -240,26 +263,66 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
-def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=(), allow_patterns=(),
-                     pass_types=(), mask_rules=()) -> Pipeline:
-    """The v1 pipeline. Fails loudly, never silently weaker, when the L2 model is missing."""
-    rules = RulesDetector()
-
-    def configured(p: Pipeline) -> Pipeline:
-        p.apply_settings(pass_types, mask_rules, allow_strings, allow_patterns)
-        return p
-
-    if rules_only:
-        return configured(Pipeline(rules, None, pii=pii))
+def load_model():
+    """pf-serve with the pinned model, started. Fails loudly, never silently weaker."""
     from .pfserve import PfServe, PfServeError, find_binary, find_model
 
+    off = "or run with the rules only: `sotto model off`"
     binary, model = find_binary(), find_model()
     if binary is None:
-        raise ModelUnavailable("pf-serve is not installed: build it with native/pf-serve/build.sh, or pass --rules-only.")
+        raise ModelUnavailable(f"pf-serve is not installed: build it with native/pf-serve/build.sh, {off}.")
     if model is None:
-        raise ModelUnavailable("the Privacy Filter model is not downloaded: run `sotto setup`, or pass --rules-only.")
+        raise ModelUnavailable(f"the Privacy Filter model is not downloaded: run `sotto setup`, {off}.")
     try:
-        pf = PfServe(binary, model)
+        return PfServe(binary, model)
     except (PfServeError, OSError) as e:
-        raise ModelUnavailable(f"the Privacy Filter model did not load ({e}); pass --rules-only to run without it.") from e
-    return configured(Pipeline(rules, pf, pii=pii))
+        raise ModelUnavailable(f"the Privacy Filter model did not load ({e}); {off}.") from e
+
+
+def default_pipeline(pii: bool = False, rules_only: bool = False, allow_strings=(), allow_patterns=(),
+                     pass_types=(), mask_rules=()) -> Pipeline:
+    """The v1 pipeline: the rules, then the model unless `rules_only` (detect.model = false)."""
+    p = Pipeline(RulesDetector(), None if rules_only else load_model(), pii=pii)
+    p.apply_settings(pass_types, mask_rules, allow_strings, allow_patterns)
+    return p
+
+
+class ModelSwitch:
+    """`detect.model`, applied while running. pf-serve starts and stops off the request path, and
+    the swap waits for the scan in progress (`lock`, the proxy's scan lock), so a request sees the
+    model or not, never half of it. Until the model has loaded, requests are scanned as before."""
+
+    def __init__(self, pipeline: Pipeline, lock: threading.Lock, loader=None):
+        self.pipeline, self.lock, self.loader = pipeline, lock, loader or load_model
+        self.wanted = pipeline.pf is not None
+        self._busy = threading.Lock()
+        self.thread: threading.Thread | None = None
+
+    def want(self, on: bool) -> None:
+        self.wanted = on
+        if on != (self.pipeline.pf is not None) or (not on and self.pipeline.model_error):
+            self.thread = threading.Thread(target=self._apply, name="sotto-model", daemon=True)
+            self.thread.start()
+
+    def _apply(self) -> None:
+        with self._busy:
+            while self.wanted != (self.pipeline.pf is not None):
+                if self.wanted:
+                    try:
+                        pf = self.loader()
+                    except ModelUnavailable as e:
+                        self.pipeline.model_error = str(e)
+                        log.error("model on, but %s Scanning with the rules only.", e)
+                        return
+                    with self.lock:
+                        self.pipeline.model_error = None
+                        self.pipeline.set_model(pf)
+                    log.info("model on: scanning with %s", self.pipeline.name)
+                else:
+                    with self.lock:
+                        old = self.pipeline.pf
+                        self.pipeline.set_model(None)
+                    old.close()
+                    log.info("model off: scanning with the rules only")
+            if not self.wanted:
+                self.pipeline.model_error = None

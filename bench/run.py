@@ -76,10 +76,10 @@ def make_detector(spec: str):
     name, _, flags = spec.partition(":")
     parts = name.split("+")
     if len(parts) == 1:
-        if name == "rules":
+        if name == "rules":  # the pipeline without a model, as sotto runs with detect.model = false
             from sotto.detect.rules import RulesDetector
 
-            return RulesDetector()
+            return CandidatePipeline(RulesDetector(), None, pii="pii" in flags.split(":"))
         if name == "pf-nemotron":
             from pf_mlx import PrivacyFilter
 

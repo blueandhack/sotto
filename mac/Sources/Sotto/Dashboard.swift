@@ -321,6 +321,8 @@ struct SettingsPage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 ModeCard(engine: engine, observing: store.snapshot.observe == true)
                     .fixedSize(horizontal: false, vertical: true)
+                DetectorCard(engine: engine, modelError: store.snapshot.detection.modelError)
+                    .fixedSize(horizontal: false, vertical: true)
                 ExclusionsCard(engine: engine)
                     .fixedSize(horizontal: false, vertical: true)
                 }

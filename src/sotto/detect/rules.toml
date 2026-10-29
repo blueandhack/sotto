@@ -5,9 +5,15 @@
 # runs when one keyword occurs in the text. `confidence` is reported with each span.
 #
 # `prose_guard = true` drops a lowercase-word value that a sentence continues after.
+# `min_classes` drops a value that uses fewer of lowercase, uppercase, digits and other
+# characters: a word, not a secret.
 # `filters` picks which [filters] drop a captured value: "placeholder" (stopwords,
 # placeholder words, repeated characters; the default), "all" (also references to values
-# held elsewhere, and plain numbers; for rules keyed on a variable name), or false.
+# held elsewhere, and plain numbers; for rules keyed on a variable name), "prose" (also
+# identifiers such as snake_case names; for rules keyed on a word in a sentence), or false.
+#
+# `type` is SECRET unless set. Rules of other types (personal data) apply only with
+# `pii = true`, and their spans pass the same noise checks as the model's.
 
 [allowlist]
 # Exact strings that are never redacted: documented example credentials and test cards.
@@ -34,6 +40,8 @@ placeholder = '''(?i)^(?:my[_-]|insert[_-]|replace[_-]|enter[_-]|sample|dummy|fa
 # References to a value held elsewhere: env vars, template variables, attribute access, calls.
 reference = '''^(?:\$|%\(|%[A-Z_]+%|process\.env|os\.(?:environ|getenv)|getenv|ENV\[|env\(|secrets\.|vault:|ref\+|!Ref|!Sub|self\.|this\.|config\.|settings\.)|\$\{|^[\w.]+[(\[]|^[A-Za-z_]\w{0,30}(?:\.[A-Za-z_]\w{0,30})+$|^[A-Z][A-Z0-9]*_[A-Z0-9_]+$|^[a-z]+(?:[-_.][a-z]+)+$|^[a-z][a-z0-9+.-]*://|^(?:\.{0,2}/|~/)'''
 numeric = '''^[\d.:_-]+$'''
+# Identifiers: snake_case, kebab-case, dotted and camelCase names (only with filters = "prose").
+identifier = '''^[a-z][a-z0-9]*(?:[-_.][a-z0-9]+)+$|^[a-z]+(?:[A-Z][a-z0-9]+)+$'''
 # Public by design: an Ethereum-style address (0x + 40 hex). A 64-hex private key still matches.
 public = '''^0x[0-9a-fA-F]{40}$'''
 # A run of six identical characters (xxxxxx, 000000, ******) marks a placeholder.
@@ -99,7 +107,7 @@ keywords = ["github_pat_"]
 
 [[rule]]
 id = "gitlab-pat"
-regex = '''\b(glpat-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])'''
+regex = '''\b(glpat-[A-Za-z0-9_-]{20,}(?:\.[0-9a-z]{9})?)(?![A-Za-z0-9_-])'''
 group = 1
 keywords = ["glpat-"]
 
@@ -187,6 +195,324 @@ regex = '''\b(do[por]_v1_[a-f0-9]{64})\b'''
 group = 1
 keywords = ["_v1_"]
 
+# --- More provider keys -------------------------------------------------------------
+# Formats from gitleaks (config/gitleaks.toml at 5f6ec56, Oct 23, 2026) and TruffleHog's
+# detectors (Oct 29, 2026): Groq, xAI, OpenRouter, Replicate, Supabase, Docker Hub, LangSmith.
+
+[[rule]]
+id = "groq-api-key"
+regex = '''\b(gsk_[A-Za-z0-9]{52})\b'''
+group = 1
+keywords = ["gsk_"]
+
+[[rule]]
+id = "xai-api-key"
+regex = '''\b(xai-[A-Za-z0-9_]{80})\b'''
+group = 1
+keywords = ["xai-"]
+
+[[rule]]
+id = "openrouter-api-key"
+regex = '''\b(sk-or-v1-[0-9a-f]{64})\b'''
+group = 1
+keywords = ["sk-or-v1-"]
+
+[[rule]]
+id = "replicate-api-token"
+regex = '''\b(r8_[A-Za-z0-9_-]{37})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["r8_"]
+
+[[rule]]
+id = "huggingface-org-token"
+regex = '''\b(api_org_[A-Za-z]{34})\b'''
+group = 1
+keywords = ["api_org_"]
+
+[[rule]]
+id = "langsmith-api-key"
+regex = '''\b(lsv2_(?:pt|sk)_[a-f0-9]{32}_[a-f0-9]{10})\b'''
+group = 1
+keywords = ["lsv2_"]
+
+[[rule]]
+id = "aws-bedrock-api-key"
+regex = '''\b(ABSK[A-Za-z0-9+/]{109,269}={0,2})(?![A-Za-z0-9+/=])'''
+group = 1
+keywords = ["absk"]
+
+[[rule]]
+id = "google-oauth-access-token"
+regex = '''\b(ya29\.[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["ya29."]
+
+[[rule]]
+id = "azure-ad-client-secret"
+regex = '''(?:^|[\\'"`\s>=:(,)])([A-Za-z0-9_~.]{3}\dQ~[A-Za-z0-9_~.-]{31,34})(?:$|[\\'"`\s<),])'''
+group = 1
+keywords = ["q~"]
+
+[[rule]]
+id = "alibaba-access-key-id"
+regex = '''\b(LTAI[A-Za-z0-9]{20})\b'''
+group = 1
+keywords = ["ltai"]
+
+[[rule]]
+id = "cloudflare-origin-ca-key"
+regex = '''\b(v1\.0-[a-f0-9]{24}-[a-f0-9]{146})\b'''
+group = 1
+keywords = ["v1.0-"]
+
+[[rule]]
+id = "gitlab-token"
+# Runner, deploy, pipeline trigger, CI job, SCIM, OAuth app, agent, feed, mail and feature-flag tokens.
+regex = '''\b((?:glptt-[0-9a-f]{40}|gloas-[A-Za-z0-9_-]{64}|glagent-[A-Za-z0-9_-]{50,}|glimt-[A-Za-z0-9_-]{25,}|glcbt-[A-Za-z0-9]{1,5}_[A-Za-z0-9_-]{20,}|(?:gldt|glrt|glsoat|glft|glffct)-[A-Za-z0-9_-]{20,}|GR1348941[A-Za-z0-9_-]{20,})(?:\.[0-9a-z]{9})?)(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["glptt-", "gloas-", "glagent-", "glimt-", "glcbt-", "gldt-", "glrt-", "glsoat-", "glft-", "glffct-", "gr1348941"]
+
+[[rule]]
+id = "docker-hub-token"
+regex = '''\b(dckr_(?:pat_[A-Za-z0-9_-]{27}|oat_[A-Za-z0-9_-]{32}))(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["dckr_"]
+
+[[rule]]
+id = "pypi-token"
+regex = '''(pypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,1000})'''
+group = 1
+keywords = ["pypi-ageichlwas5vcmc"]
+
+[[rule]]
+id = "rubygems-token"
+regex = '''\b(rubygems_[a-f0-9]{48})\b'''
+group = 1
+keywords = ["rubygems_"]
+
+[[rule]]
+id = "clojars-token"
+regex = '''\b(CLOJARS_[A-Za-z0-9]{60})\b'''
+group = 1
+keywords = ["clojars_"]
+
+[[rule]]
+id = "artifactory-token"
+regex = '''\b(AKCp[A-Za-z0-9]{69}|cmVmd[A-Za-z0-9]{59})\b'''
+group = 1
+keywords = ["akcp", "cmvmd"]
+
+[[rule]]
+id = "supabase-access-token"
+regex = '''\b(sbp_[a-z0-9]{40})\b'''
+group = 1
+keywords = ["sbp_"]
+
+[[rule]]
+id = "planetscale-token"
+regex = '''\b(pscale_(?:tkn|oauth|pw)_[A-Za-z0-9_=.-]{32,64})(?![A-Za-z0-9_=.-])'''
+group = 1
+keywords = ["pscale_"]
+
+[[rule]]
+id = "databricks-token"
+regex = '''\b(dapi[a-f0-9]{32}(?:-\d)?)\b'''
+group = 1
+keywords = ["dapi"]
+
+[[rule]]
+id = "heroku-api-key"
+regex = '''\b(HRKU-AA[A-Za-z0-9_-]{58})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["hrku-aa"]
+
+[[rule]]
+id = "flyio-token"
+regex = '''\b(fo1_[A-Za-z0-9_-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})(?![A-Za-z0-9+/=_-])'''
+group = 1
+keywords = ["fo1_", "fm1", "fm2_"]
+
+[[rule]]
+id = "vault-token"
+regex = '''\b(hvs\.[A-Za-z0-9_-]{90,120}|hvb\.[A-Za-z0-9_-]{138,300})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["hvs.", "hvb."]
+
+[[rule]]
+id = "terraform-cloud-token"
+regex = '''\b([A-Za-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,70})(?![A-Za-z0-9_=-])'''
+group = 1
+keywords = ["atlasv1"]
+
+[[rule]]
+id = "pulumi-token"
+regex = '''\b(pul-[a-f0-9]{40})\b'''
+group = 1
+keywords = ["pul-"]
+
+[[rule]]
+id = "doppler-token"
+regex = '''\b(dp\.pt\.[A-Za-z0-9]{43})\b'''
+group = 1
+keywords = ["dp.pt."]
+
+[[rule]]
+id = "1password-token"
+regex = '''(ops_eyJ[A-Za-z0-9+/]{250,}={0,3}|\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b)'''
+group = 1
+keywords = ["ops_", "a3-"]
+
+[[rule]]
+id = "age-secret-key"
+regex = '''(AGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58})'''
+group = 1
+keywords = ["age-secret-key-1"]
+
+[[rule]]
+id = "grafana-token"
+regex = '''\b(glc_[A-Za-z0-9+/]{32,400}={0,2}|glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}|eyJrIjoi[A-Za-z0-9]{70,400}={0,2})(?![A-Za-z0-9+/=])'''
+group = 1
+keywords = ["glc_", "glsa_", "eyjrijoi"]
+
+[[rule]]
+id = "new-relic-key"
+regex = '''\b(NRAK-[A-Z0-9]{27}|NRII-[A-Za-z0-9-]{32})\b'''
+group = 1
+keywords = ["nrak-", "nrii-"]
+
+[[rule]]
+id = "sentry-token"
+regex = '''\b(sntryu_[a-f0-9]{64}|sntrys_eyJpYXQiO[A-Za-z0-9+/=_]{50,600})(?![A-Za-z0-9+/=_])'''
+group = 1
+keywords = ["sntryu_", "sntrys_"]
+
+[[rule]]
+id = "dynatrace-token"
+regex = '''\b(dt0c01\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{64})\b'''
+group = 1
+keywords = ["dt0c01."]
+
+[[rule]]
+id = "postman-api-key"
+regex = '''\b(PMAK-[a-fA-F0-9]{24}-[a-fA-F0-9]{34})\b'''
+group = 1
+keywords = ["pmak-"]
+
+[[rule]]
+id = "linear-api-key"
+regex = '''\b(lin_api_[A-Za-z0-9]{40})\b'''
+group = 1
+keywords = ["lin_api_"]
+
+[[rule]]
+id = "notion-token"
+regex = '''\b(ntn_\d{11}[A-Za-z0-9]{35})\b'''
+group = 1
+keywords = ["ntn_"]
+
+[[rule]]
+id = "sourcegraph-token"
+regex = '''\b(sgp_(?:[a-fA-F0-9]{16}_|local_)?[a-fA-F0-9]{40})\b'''
+group = 1
+keywords = ["sgp_"]
+
+[[rule]]
+id = "prefect-api-key"
+regex = '''\b(pnu_[A-Za-z0-9]{36})\b'''
+group = 1
+keywords = ["pnu_"]
+
+[[rule]]
+id = "readme-api-key"
+regex = '''\b(rdme_[a-z0-9]{70})\b'''
+group = 1
+keywords = ["rdme_"]
+
+[[rule]]
+id = "infracost-api-key"
+regex = '''\b(ico-[A-Za-z0-9]{32})\b'''
+group = 1
+keywords = ["ico-"]
+
+[[rule]]
+id = "scalingo-token"
+regex = '''\b(tk-us-[A-Za-z0-9_-]{48})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["tk-us-"]
+
+[[rule]]
+id = "frameio-token"
+regex = '''\b(fio-u-[A-Za-z0-9_=-]{64})(?![A-Za-z0-9_=-])'''
+group = 1
+keywords = ["fio-u-"]
+
+[[rule]]
+id = "maxmind-license-key"
+regex = '''\b([A-Za-z0-9]{6}_[A-Za-z0-9]{29}_mmk)\b'''
+group = 1
+keywords = ["_mmk"]
+
+[[rule]]
+id = "shopify-token"
+regex = '''\b(shp(?:at|ca|pa|ss)_[a-fA-F0-9]{32})\b'''
+group = 1
+keywords = ["shpat_", "shpca_", "shppa_", "shpss_"]
+
+[[rule]]
+id = "square-access-token"
+regex = '''\b((?:EAAA|sq0atp-)[A-Za-z0-9_-]{22,60})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = ["eaaa", "sq0atp-"]
+
+[[rule]]
+id = "shippo-token"
+regex = '''\b(shippo_(?:live|test)_[a-fA-F0-9]{40})\b'''
+group = 1
+keywords = ["shippo_"]
+
+[[rule]]
+id = "duffel-token"
+regex = '''\b(duffel_(?:test|live)_[A-Za-z0-9_=-]{43})(?![A-Za-z0-9_=-])'''
+group = 1
+keywords = ["duffel_"]
+
+[[rule]]
+id = "easypost-key"
+regex = '''\b(EZ[AT]K[A-Za-z0-9]{54})\b'''
+group = 1
+keywords = ["ezak", "eztk"]
+
+[[rule]]
+id = "sendinblue-key"
+regex = '''\b(xkeysib-[a-f0-9]{64}-[A-Za-z0-9]{16})\b'''
+group = 1
+keywords = ["xkeysib-"]
+
+[[rule]]
+id = "mailchimp-key"
+regex = '''\b([a-f0-9]{32}-us\d{1,2})\b'''
+group = 1
+keywords = ["-us"]
+
+[[rule]]
+id = "slack-app-token"
+regex = '''\b(xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+)\b'''
+group = 1
+keywords = ["xapp-"]
+
+[[rule]]
+id = "telegram-bot-token"
+regex = '''\b(\d{8,10}:AA[A-Za-z0-9_-]{33})(?![A-Za-z0-9_-])'''
+group = 1
+keywords = [":aa"]
+
+[[rule]]
+id = "facebook-access-token"
+regex = '''\b(EAA[MC][A-Za-z0-9]{100,})\b'''
+group = 1
+keywords = ["eaam", "eaac"]
+
+
 # --- Credentials in context ------------------------------------------------------
 
 [[rule]]
@@ -234,3 +560,141 @@ filters = "all"
 confidence = 0.8
 # Prose, not an assignment: "set TOKEN= followed by the value" (a lowercase word, then more words).
 prose_guard = true
+
+[[rule]]
+id = "secret-flag"
+# A command-line flag named for a secret: --token VALUE, --api-key=VALUE, --password VALUE.
+regex = '''(?i)(?<![\w-])--?(?:[a-z0-9]+[-_])*(?:passw(?:or)?d|pass|pwd|passphrase|token|secret|api[-_]?key|apikey|access[-_]?key|secret[-_]?key|auth|auth[-_]?token|private[-_]?key|client[-_]?secret|credentials?)(?:=|[ \t]+)(?!-)["']?([^\s"'`;|&<>]{8,200})'''
+group = 1
+keywords = ["pass", "pwd", "token", "secret", "key", "auth", "credential"]
+filters = "all"
+min_classes = 2
+confidence = 0.8
+
+[[rule]]
+id = "curl-user-password"
+# curl -u user:password
+regex = '''\bcurl\b[^\n]*?[ \t](?:-u|--user)[ \t]+["']?[^\s:"']+:([^\s"'@]{6,200})'''
+group = 1
+keywords = ["curl"]
+filters = "all"
+
+[[rule]]
+id = "password-in-prose"
+# "the password for the build box is X"
+regex = '''(?i)\b(?:password|passphrase|passcode)\b(?:[ \t]+(?:for|of|on|to)[ \t]+(?:the[ \t]+|my[ \t]+|our[ \t]+|your[ \t]+)?[\w.-]+(?:[ \t]+[\w.-]+)?)?[ \t]+(?:is|was)[ \t]*:?[ \t]*["'`]?([^\s"'`,;]{7,199}[^\s"'`,;.!?:)])'''
+group = 1
+keywords = ["password", "passphrase", "passcode"]
+filters = "all"
+min_classes = 2
+confidence = 0.7
+
+[[rule]]
+id = "key-in-prose"
+# "the Datadog key for staging is X". Not a database, cache or experiment key.
+regex = '''(?i)(?<!cache )(?<!primary )(?<!foreign )(?<!sort )(?<!partition )(?<!idempotency )(?<!object )(?<!public )(?<!license )(?<!experiment )(?<!flag )(?<!lookup )(?<!composite )(?<!unique )(?<!hash )(?<!map )(?<!row )\b(?:api[ _-]?key|access[ _-]?key|secret[ _-]?key|key|token|secret)\b(?:[ \t]+(?:for|of|on|to)[ \t]+(?:the[ \t]+|my[ \t]+|our[ \t]+|your[ \t]+)?[\w.-]+(?:[ \t]+[\w.-]+)?)?[ \t]+(?:is|was)[ \t]*:?[ \t]*["'`]?([A-Za-z0-9+/_~=.-]{15,199}[A-Za-z0-9+/_~=-])'''
+group = 1
+keywords = ["key", "token", "secret"]
+filters = "prose"
+min_classes = 2
+confidence = 0.7
+
+[[rule]]
+id = "netrc-password"
+regex = '''(?i)\bmachine[ \t]+\S+(?:\s+login[ \t]+\S+)?\s+password[ \t]+(\S{4,200})'''
+group = 1
+keywords = ["machine"]
+filters = "all"
+
+[[rule]]
+id = "docker-config-auth"
+# ~/.docker/config.json: "auth" is base64 of user:password.
+regex = '''"auth"\s*:\s*"([A-Za-z0-9+/]{12,}={0,2})"'''
+group = 1
+keywords = ['"auths"']
+
+[[rule]]
+id = "npmrc-auth"
+regex = '''(?m)(?:^|:)_auth[ \t]*=[ \t]*["']?([A-Za-z0-9+/]{12,}={0,2})'''
+group = 1
+keywords = ["_auth"]
+
+[[rule]]
+id = "kubeconfig-client-key"
+regex = '''(?i)\bclient-key-data:[ \t]*["']?([A-Za-z0-9+/]{40,}={0,2})'''
+group = 1
+keywords = ["client-key-data"]
+
+[[rule]]
+id = "azure-storage-key"
+regex = '''(?i)\b(?:AccountKey|SharedAccessKey)=([A-Za-z0-9+/]{40,88}={0,2})'''
+group = 1
+keywords = ["accountkey", "sharedaccesskey"]
+
+[[rule]]
+id = "signed-url-signature"
+# Presigned S3 and GCS URLs, Azure SAS tokens: the signature grants access.
+regex = '''(?i)[?&](?:X-Amz-Signature|X-Amz-Security-Token|X-Goog-Signature|sig)=([A-Za-z0-9%+/=_-]{30,})'''
+group = 1
+keywords = ["x-amz-signature", "x-amz-security-token", "x-goog-signature", "sig="]
+
+[[rule]]
+id = "session-cookie"
+regex = '''(?i)(?:\bcookie:[ \t]*|;[ \t]*)(?:__(?:Host|Secure)-)?[\w.-]*?(?:session|sess|sid|auth|token|jwt|remember)[\w.-]*=([^;\s"']{16,4096})'''
+group = 1
+keywords = ["cookie"]
+filters = "all"
+
+# --- Personal data (pii = true) -----------------------------------------------------
+# Found without the model. The model finds names, addresses and personal URLs too.
+
+[[rule]]
+id = "email"
+# Where an address starts: after a space, a quote, a bracket, `=`, `,` or `mailto:`. Not
+# git@host:repo, user:password@host, icon@2x.png, x@self.weight, or a package@version.
+regex = '''(?:(?<=mailto:)|(?<![^\s<>("'`,;=\[{|*]))([A-Za-z0-9][A-Za-z0-9._%+-]{0,63}@(?!self\.|this\.|cls\.)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+(?!(?:png|jpe?g|gif|svg|webp|ico|pdf|m?js|cjs|tsx?|jsx|json|css|scss|html?|lock|toml|ya?ml|xml|txt|log|zip|t?gz)\b)[A-Za-z]{2,24})\b(?![:@][\w/~]|\.[A-Za-z0-9-])'''
+group = 1
+keywords = ["@"]
+type = "EMAIL"
+confidence = 0.95
+
+[[rule]]
+id = "phone-nanp"
+# (415) 555-2671, 415-555-2671, +1 415 555 2671: grouped, as people write them.
+regex = '''(?<![\w.+/-])((?:\+1[ .-]?)?(?:\([2-9]\d{2}\)[ ]?|[2-9]\d{2}[ .-])[2-9]\d{2}[ .-]\d{4})(?![\w.-]|:\d)'''
+group = 1
+type = "PHONE"
+confidence = 0.85
+
+[[rule]]
+id = "phone-international"
+# +44 7700 900123, +49 30 1234567, +33 6 12 34 56 78
+regex = '''(?<![\w.+/-])(\+[2-9]\d{0,2}(?:[ .-]?\(?\d{1,4}\)?){1,2}(?:[ .-]?\d{2,4}){2,4})(?![\w.-]|:\d)'''
+group = 1
+keywords = ["+"]
+type = "PHONE"
+confidence = 0.85
+
+[[rule]]
+id = "phone-labeled"
+regex = '''(?i)\b(?:phone|tel|telephone|mobile|cell|whatsapp|sms|fax)(?:[ _-]?(?:number|no))?["']?[ \t]*[:=][ \t]*["']?(\+?\d{10,15})(?!\d)'''
+group = 1
+keywords = ["phone", "tel", "mobile", "cell", "whatsapp", "sms", "fax"]
+type = "PHONE"
+confidence = 0.9
+
+[[rule]]
+id = "us-ssn"
+regex = '''(?i)\b(?:ssn|social[ _-]security(?:[ _-](?:number|no\.?))?|soc[ .]sec[ .]?(?:no\.?)?)\b[\w \t#.:="']{0,20}?\b((?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4})\b'''
+group = 1
+keywords = ["ssn", "social", "soc"]
+type = "ACCOUNT"
+confidence = 0.95
+
+[[rule]]
+id = "date-of-birth"
+regex = '''(?i)(?<![a-z])(?:born(?:[ \t]+on)?|birth[ _-]?date|date[ _-]of[ _-]birth|birthday|dob|d\.o\.b\.?)["']?[ \t]*[:=]?[ \t]*["']?((?:19|20)\d{2}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/(?:19|20)?\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?[ \t]+\d{1,2}(?:st|nd|rd|th)?,?[ \t]+(?:19|20)\d{2}|\d{1,2}[ \t]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?[ \t]+(?:19|20)\d{2})(?![\d-])'''
+group = 1
+keywords = ["born", "birth", "dob", "d.o.b"]
+type = "DATE"
+confidence = 0.9

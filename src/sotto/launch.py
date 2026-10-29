@@ -39,18 +39,25 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
     pii = cfg.pii if pii is None else pii
     if upstream and is_sotto_url(upstream, cfg.port):
         upstream = None  # protection points Claude Code at sotto: never forward to ourselves
-    pipeline = default_pipeline(pii=pii, rules_only=rules_only, allow_strings=cfg.allow_strings,
+    from .detect.pipeline import ModelSwitch
+
+    # `rules_only` (--rules-only) holds for this run; otherwise detect.model decides, and can change.
+    pipeline = default_pipeline(pii=pii, rules_only=rules_only or not cfg.model, allow_strings=cfg.allow_strings,
                                 allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules)
     info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__, "apis": ["messages", "responses"]}
     from .stats import History, Stats
 
     def apply(new) -> None:  # the config file changed: detection settings apply on the next request
         pipeline.apply_settings(new.pass_types, new.mask_rules, new.allow_strings, new.allow_patterns)
+        if not rules_only:
+            switch.want(new.model)
 
     observe = LiveConfig(cfg.path, cfg, on_change=apply)
     history = History(Path.home() / ".config" / "sotto" / "history.jsonl")
-    return Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
-                 stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe)
+    proxy = Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
+                  stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe)
+    switch = ModelSwitch(pipeline, proxy._scan_lock)
+    return proxy
 
 
 def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:

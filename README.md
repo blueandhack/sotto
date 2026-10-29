@@ -23,8 +23,8 @@ opencode    ─┘   detect → mask            └──▶ OpenAI API
 ```
 
 1. **Detect.** Two layers, cheapest first:
-   - 27 gitleaks-style rules, plus entropy and checksum checks, for structured secrets.
-   - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), an open-weight token classifier, for secrets in context and, optionally, personal data. It runs in pf-serve, a small native program on [privacy-filter.cpp](https://github.com/localai-org/privacy-filter.cpp) that uses the Mac's GPU through Metal.
+   - 96 rules, plus entropy and checksum checks: provider keys (formats from gitleaks and TruffleHog), secrets in command-line flags, config files and plain sentences, and, with personal data on, emails, phone numbers, SSNs and dates of birth.
+   - [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), an open-weight token classifier, for secrets in context and, optionally, personal data such as names and addresses. It runs in pf-serve, a small native program on [privacy-filter.cpp](https://github.com/localai-org/privacy-filter.cpp) that uses the Mac's GPU through Metal. You can turn it off and run on the rules alone (`sotto model off`).
    - A deterministic refinement step then drops what the model gets wrong: UUIDs, hashes, request IDs, timestamps, paths, placeholders and documented example keys.
 2. **Mask.** Each value becomes a placeholder derived from a secret per-install key (HMAC-SHA256). The same value always gets the same placeholder, so the provider's prompt cache keeps working. You choose what is masked: turn off a type (names, dates…), add your own patterns, and list exceptions. Values live only in memory and are cleared when sotto exits.
 3. **Restore.** Placeholders in the model's answers are swapped back on your Mac, including in streamed text and in tool inputs (file edits, shell commands). Network tools such as WebFetch, WebSearch and MCP tools keep placeholders, so a prompt-injected request cannot send a real value to the internet.
@@ -35,7 +35,7 @@ opencode    ─┘   detect → mask            └──▶ OpenAI API
 - A Mac with Apple silicon, and macOS 14 or later
 - Python 3.12+, [uv](https://docs.astral.sh/uv/), and Xcode or its command line tools (to build pf-serve)
 - Claude Code, Codex, pi or opencode
-- About 1.7 GB of free memory while sotto runs (the local model), and 1.6 GB of disk for it
+- About 1.7 GB of free memory while sotto runs (the local model), and 1.6 GB of disk for it; neither with `sotto model off`
 
 ## Install
 
@@ -104,6 +104,15 @@ sotto observe off      # mask again
 
 Observe mode shows what sotto would catch without changing anything: requests go to the provider exactly as the agent sent them, nothing is blocked, and the dashboard says so on every page. Running proxies switch on their next request; if the config file becomes invalid, they mask.
 
+### Rules only, without the model
+
+```sh
+sotto model off        # scan with the rules alone
+sotto model on         # the rules, then the local model (the default)
+```
+
+The rules alone are faster and need no model download and no 1.7 GB of memory. They find secrets with a known shape (52 provider formats, private keys, JWTs), secrets under a telling name (`DB_PASSWORD=`, `--token`, "the API key is …"), long random strings, and, with personal data on, emails, phone numbers, card and bank numbers, SSNs and dates of birth. They miss what only context reveals: names, addresses, and a secret with no shape and no telling name around it. On the benchmark, secret recall is 0.99 either way; personal-data recall is 0.77 with the rules alone and 1.00 with the model ([bench/results/RULES.md](bench/results/RULES.md)). Running proxies switch on their next request, and the Mac app has the same switch in Settings › Detector.
+
 ### Choose what gets masked
 
 ```sh
@@ -139,6 +148,7 @@ Optional, in `~/.config/sotto/config.toml`. Unknown keys and bad values are erro
 ```toml
 [detect]
 pii = false            # also mask names, emails, phones, addresses, account numbers
+model = true           # the local model after the rules; false: the rules alone (`sotto model on|off`)
 observe = false        # count what would be masked, but send requests UNMASKED (`sotto observe on|off`)
 pass = []              # types never masked, e.g. ["PERSON", "DATE"] (`sotto types pass person`)
 
@@ -181,12 +191,13 @@ A menu-bar app that sets sotto up and runs it in the background, with a dashboar
 
 ## Accuracy and speed
 
-Measured on synthetic, labeled datasets on an M5 Pro (details in [bench/results/PHASE0.md](bench/results/PHASE0.md), [MODELS.md](bench/results/MODELS.md) and [PFSERVE.md](bench/results/PFSERVE.md)):
+Measured on synthetic, labeled datasets on an M5 Pro (details in [bench/results/PHASE0.md](bench/results/PHASE0.md), [MODELS.md](bench/results/MODELS.md), [PFSERVE.md](bench/results/PFSERVE.md) and [RULES.md](bench/results/RULES.md)):
 
 | | Result |
 | --- | --- |
 | Secret recall | 0.989 to 1.000 across five datasets, four of them held out |
 | Personal data (`pii = true`) | recall 0.996 to 1.000, precision 0.85 to 0.93 |
+| Rules alone (`sotto model off`) | secret recall 0.993 at precision 1.000; personal data recall 0.77 at precision 0.996 (no names or addresses); 8 to 9 ms for 4K tokens |
 | Fake secrets wrongly flagged | 1 of 40 and 0 of 15 on the first two sets; **9, 3 and 3 of 15 on the three freshest held-out sets** (unusual ID formats; see below) |
 | Time added per request | about 100 to 145 ms at the 95th percentile for 4K tokens of new text; earlier turns are cached |
 
@@ -195,6 +206,7 @@ No language model judges spans at request time. The Apple on-device model and Qw
 ## Limitations
 
 - **False positives on unusual identifiers.** On two fresh sets of hard negatives, 9 of 15 and 3 of 15 were flagged (memory addresses, Azure resource IDs, Stripe object IDs, Kubernetes pod hashes, AWS VPC and security group IDs, Xcode build folders, and IDs right after the word "key", such as idempotency keys). Over-masking costs the model some context but never leaks. A small trained classifier is planned for this.
+- **The rules alone miss what only context reveals.** With `sotto model off`, names, addresses and a secret with neither a known shape nor a telling name around it go out unmasked.
 - **Images and PDFs pass through unscanned.**
 - **Local transcripts keep real values.** Your agent's history on your disk is restored, so it holds real values. sotto protects what leaves your Mac, not what is stored on it.
 - **Shell commands receive real values.** An agent can still run a command that sends a restored secret somewhere. Use it together with a sandbox such as [Claude Code's](https://code.claude.com/docs/en/sandboxing), whose network allowlist stops that. sotto controls what the provider sees; the sandbox controls what commands can do.

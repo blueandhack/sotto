@@ -8,7 +8,7 @@ A menu-bar app that sets sotto up, runs it in the background and shows what it d
 - **Activity:** every request, newest first, kept across restarts in `~/.config/sotto/history.jsonl`: outcome (masked, clean, blocked, observed), what was masked and restored, and scan time, filterable by outcome, with older pages on demand; plus a per-minute chart.
 - **Detection:** per type, how many values were found, allowed by an exception, passed through by your settings, and masked, with a switch to stop masking a type (names, dates…; secrets ask first); which detector found them (built-in rules, the local model, your rules) and the top rules; and your own rules: patterns always masked and exceptions never masked.
 - **Performance:** scan time against the 150 ms budget, and its distribution.
-- **Settings:** Setup (download the model, start the background service, one protection switch per coding agent), Mode (mask, or observe only), excluded projects (`sotto exclude`), display (appearance and preview data), connection details.
+- **Settings:** Setup (download the model, start the background service, one protection switch per coding agent), Mode (mask, or observe only), Detector (the rules and the local model, or the rules alone: `sotto model`), excluded projects (`sotto exclude`), display (appearance and preview data), connection details.
 - **Menu bar:** the key numbers, which agents are protected, and a shortcut to the dashboard.
 
 ![Overview, light](docs/overview-light.png)
@@ -27,7 +27,7 @@ open build/Sotto.app
 
 **What the app bundles** (`bundle-runtime.sh`, about 95 MB): a relocatable CPython 3.12 with sotto and its locked dependencies, pf-serve built from pinned sources, the `sotto` command the app runs for setup and protection, and a LaunchAgent (`Contents/Library/LaunchAgents/dev.sotto.agent.plist`) that runs `sotto serve` at login, registered with SMAppService. The bundled Python runs isolated (`-I`) and never writes into the signed bundle (`-B`; everything is compiled at build time). The model (1.6 GB) is downloaded on first use into `~/.local/share/sotto`, which the command line shares. The app and the command line share one placeholder key, `~/.config/sotto/salt` (0600), so a placeholder made by either is restored by the other.
 
-**Setup**, in Settings, takes three steps, each also available on the command line: download the model (`sotto setup`), start the background service (macOS may ask you to allow it in System Settings › Login Items), and **Protect your coding agents**, one switch each for Claude Code, Codex, pi and opencode (`sotto protect on --client …`). A switch turns on only while the service runs, and stopping the service turns protection off for every agent first, so no agent is pointed at a proxy that is not there.
+**Setup**, in Settings, takes three steps, each also available on the command line: download the model (`sotto setup`; not needed with Detector set to rules only), start the background service (macOS may ask you to allow it in System Settings › Login Items), and **Protect your coding agents**, one switch each for Claude Code, Codex, pi and opencode (`sotto protect on --client …`). A switch turns on only while the service runs, and stopping the service turns protection off for every agent first, so no agent is pointed at a proxy that is not there.
 
 - **Preview** shows animated sample data, clearly labeled, when sotto is not running.
 - `Sotto --snapshot dir` renders every page in light and dark to PNGs and exits; with `--live` it renders the overview from the running proxy.

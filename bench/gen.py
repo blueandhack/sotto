@@ -8,6 +8,10 @@ real credential. Personal data comes from Faker. Hard negatives are hand-written
     uv run python bench/gen.py --seed 9 --negatives holdout2 --out /tmp/holdout2   # second check
     uv run python bench/gen.py --seed 10 --negatives holdout3 --out /tmp/holdout3  # after pf-serve and IBANs
     uv run python bench/gen.py --seed 11 --negatives holdout4 --out /tmp/holdout4  # after keyed ACCOUNT spans
+    uv run python bench/gen.py --seed 12 --negatives holdout5 --out /tmp/holdout5  # after the personal-data rules
+
+`extra.jsonl` holds the formats added in Oct 2026 (more providers, secrets in flags and prose,
+personal data the rules find). It is generated last, so the other files stay as they were.
 """
 
 from __future__ import annotations
@@ -23,7 +27,8 @@ from pathlib import Path
 from faker import Faker
 
 sys.path.insert(0, str(Path(__file__).parent))
-from negatives import HOLDOUT2_NEGATIVES, HOLDOUT3_NEGATIVES, HOLDOUT4_NEGATIVES, HOLDOUT_NEGATIVES, NEGATIVES  # noqa: E402
+from negatives import (HOLDOUT2_NEGATIVES, HOLDOUT3_NEGATIVES, HOLDOUT4_NEGATIVES, HOLDOUT5_NEGATIVES,  # noqa: E402
+                       HOLDOUT_NEGATIVES, NEGATIVES)
 
 UPPER, LOWER, DIGITS = string.ascii_uppercase, string.ascii_lowercase, string.digits
 ALNUM = UPPER + LOWER + DIGITS
@@ -429,6 +434,96 @@ def gen_long(r: random.Random, fake: Faker, sec: Secrets, count_tokens) -> list[
     return out
 
 
+# --- Formats added in Oct 2026 ------------------------------------------------------------
+
+# (tag, format): each a function of Secrets. The formats come from gitleaks' and TruffleHog's rules.
+EXTRA_PROVIDERS = [
+    ("groq", lambda s: "gsk_" + s.s(ALNUM, 52)),
+    ("xai", lambda s: "xai-" + s.s(ALNUM, 80)),
+    ("openrouter", lambda s: "sk-or-v1-" + s.s(HEX, 64)),
+    ("replicate", lambda s: "r8_" + s.s(ALNUM, 37)),
+    ("supabase", lambda s: "sbp_" + s.s(HEX, 40)),
+    ("docker-hub", lambda s: "dckr_pat_" + s.s(B64URL, 27)),
+    ("langsmith", lambda s: "lsv2_pt_" + s.s(HEX, 32) + "_" + s.s(HEX, 10)),
+    ("google-oauth", lambda s: "ya29." + s.s(B64URL, 120)),
+    ("shopify", lambda s: s.r.choice(["shpat_", "shpss_"]) + s.s(HEX, 32)),
+    ("linear", lambda s: "lin_api_" + s.s(ALNUM, 40)),
+    ("notion", lambda s: "ntn_" + s.s(DIGITS, 11) + s.s(ALNUM, 35)),
+    ("pypi", lambda s: "pypi-AgEIcHlwaS5vcmc" + s.s(B64URL, 70)),
+    ("doppler", lambda s: "dp.pt." + s.s(ALNUM, 43)),
+    ("pulumi", lambda s: "pul-" + s.s(HEX, 40)),
+    ("postman", lambda s: "PMAK-" + s.s(HEX, 24) + "-" + s.s(HEX, 34)),
+    ("databricks", lambda s: "dapi" + s.s(HEX, 32)),
+    ("grafana", lambda s: "glsa_" + s.s(ALNUM, 32) + "_" + s.s(HEX, 8)),
+    ("new-relic", lambda s: "NRAK-" + s.s(UPPER + DIGITS, 27)),
+    ("sentry", lambda s: "sntryu_" + s.s(HEX, 64)),
+    ("age", lambda s: "AGE-SECRET-KEY-1" + s.s("QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L", 58)),
+    ("vault", lambda s: "hvs." + s.s(B64URL, 95)),
+    ("terraform-cloud", lambda s: s.s(LOWER + DIGITS, 14) + ".atlasv1." + s.s(LOWER + DIGITS + "-_", 66)),
+    ("heroku", lambda s: "HRKU-AA" + s.s(B64URL, 58)),
+    ("azure-ad", lambda s: s.s(ALNUM, 3) + s.s(DIGITS, 1) + "Q~" + s.s(ALNUM + "_~.-", 34)),
+    ("1password", lambda s: "ops_eyJ" + s.s(ALNUM + "+/", 260)),
+    ("gitlab-runner", lambda s: "glrt-" + s.s(B64URL, 20)),
+    ("slack-app", lambda s: f"xapp-1-A{s.s(UPPER + DIGITS, 10)}-{s.s(DIGITS, 13)}-{s.s(HEX, 64)}"),
+    ("square", lambda s: "EAAA" + s.s(B64URL, 60)),
+    ("planetscale", lambda s: "pscale_tkn_" + s.s(B64URL, 43)),
+    ("telegram", lambda s: s.s(DIGITS, 10) + ":AA" + s.s(B64URL, 33)),
+    ("dynatrace", lambda s: "dt0c01." + s.s(UPPER + DIGITS, 24) + "." + s.s(UPPER + DIGITS, 64)),
+    ("alibaba", lambda s: "LTAI" + s.s(ALNUM, 20)),
+    ("sendinblue", lambda s: "xkeysib-" + s.s(HEX, 64) + "-" + s.s(ALNUM, 16)),
+    ("rubygems", lambda s: "rubygems_" + s.s(HEX, 48)),
+    ("aws-bedrock", lambda s: "ABSK" + s.s(ALNUM + "+/", 132)),
+    ("huggingface-org", lambda s: "api_org_" + s.s(UPPER + LOWER, 34)),
+]
+
+# Places a bare value turns up with no keyword in its name: rules for the format must find it.
+EXTRA_CONTEXTS = [
+    lambda tag, v: Doc().add(f"export {tag.upper().replace('-', '_')}=", v, "\n"),
+    lambda tag, v: Doc().add(f"{tag.replace('-', '_')} = \"", v, "\"\n"),
+    lambda tag, v: Doc().add(f"  {tag}: ", v, "\n"),
+    lambda tag, v: Doc().add(f"here is the {tag} one, rotate it after the demo: ", v, "\n"),
+    lambda tag, v: Doc().add('{"name": "', tag, '", "value": "', v, '"}\n'),
+]
+
+
+def gen_extra(r: random.Random, fake: Faker, sec: Secrets) -> list[dict]:
+    out = []
+    p = People(fake, r)
+
+    def add(doc, tags):
+        out.append(record(f"extra-{len(out):03d}", doc, tags))
+
+    for i, (tag, fmt) in enumerate(EXTRA_PROVIDERS):
+        add(EXTRA_CONTEXTS[i % len(EXTRA_CONTEXTS)](tag, (fmt(sec), "SECRET")), ["secrets", tag, "ctx:bare"])
+    # Secrets in command-line flags, prose and config files the provider rules do not cover.
+    pw, tok = sec.password, sec.opaque
+    add(Doc().add("./migrate --url https://ops.acme.dev --token ", (tok(40), "SECRET"), " --dry-run\n"), ["secrets", "flag"])
+    add(Doc().add("mysqldump -h db.internal -u backup --password=", (pw(), "SECRET"), " shop > shop.sql\n"), ["secrets", "flag"])
+    add(Doc().add("acme deploy --region eu-west-1 --api-key ", (tok(32), "SECRET"), "\n"), ["secrets", "flag"])
+    add(Doc().add("curl -u admin:", (pw().replace("@", "#"), "SECRET"), " https://jenkins.acme.dev/api/json\n"), ["secrets", "flag"])
+    add(Doc().add("The staging API key is ", (tok(32), "SECRET"), ", it expires on Friday.\n"), ["secrets", "prose"])
+    add(Doc().add("fyi the password for the build box is ", (pw(), "SECRET"), "\n"), ["secrets", "prose"])
+    add(Doc().add("machine api.heroku.com\n  login ", (p.email(), "EMAIL"), "\n  password ", (tok(36), "SECRET"), "\n"), ["secrets", "netrc"])
+    auth = base64.b64encode(f"acme-bot:{tok(24)}".encode()).decode()
+    add(Doc().add('{\n  "auths": {\n    "ghcr.io": {\n      "auth": "', (auth, "SECRET"), '"\n    }\n  }\n}\n'), ["secrets", "docker-config"])
+    add(Doc().add("GET /account HTTP/1.1\nHost: shop.acme.dev\nCookie: theme=dark; session_id=", (tok(48), "SECRET"), "\n"), ["secrets", "cookie"])
+    add(Doc().add("https://acme-exports.s3.amazonaws.com/q3.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-Signature=",
+                  (sec.hex_key(64), "SECRET"), "\n"), ["secrets", "presigned-url"])
+    add(Doc().add("DefaultEndpointsProtocol=https;AccountName=acmeexports;AccountKey=",
+                  (base64.b64encode(r.randbytes(64)).decode(), "SECRET"), ";EndpointSuffix=core.windows.net\n"), ["secrets", "azure-storage"])
+    add(Doc().add("users:\n- name: admin\n  user:\n    client-certificate-data: LS0tLS1CRUdJTi\n    client-key-data: ",
+                  (base64.b64encode(r.randbytes(120)).decode(), "SECRET"), "\n"), ["secrets", "kubeconfig"])
+    # Personal data the rules can find without the model (pii = true).
+    ssn = f"{r.randint(100, 665)}-{r.randint(10, 99)}-{r.randint(1000, 9999)}"
+    add(Doc().add("applicant: ", (p.name(), "PERSON"), "\nSSN: ", (ssn, "ACCOUNT"), "\n"), ["pii", "ssn"])
+    add(Doc().add("reach me at ", (p.email(), "EMAIL"), " or on ", (f"+49 30 {r.randint(1000000, 9999999)}", "PHONE"), "\n"), ["pii", "contact"])
+    add(Doc().add('<a href="mailto:', (p.email(), "EMAIL"), '">email us</a>\n'), ["pii", "mailto"])
+    add(Doc().add("patient dob: ", (f"{r.randint(1950, 2005)}-0{r.randint(1, 9)}-{r.randint(10, 28)}", "DATE"), ", allergies: none\n"), ["pii", "dob"])
+    add(Doc().add("Date of birth: ", (f"{r.randint(1, 12):02d}/{r.randint(1, 28):02d}/{r.randint(1950, 2005)}", "DATE"), "\n"), ["pii", "dob"])
+    add(Doc().add("call her mobile ", (f"+33 6 {r.randint(10, 99)} {r.randint(10, 99)} {r.randint(10, 99)} {r.randint(10, 99)}", "PHONE"), " after 6pm\n"), ["pii", "phone"])
+    return out
+
+
 def token_counter():
     try:
         from huggingface_hub import hf_hub_download
@@ -446,7 +541,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--out", type=Path, default=Path(__file__).parent / "data")
-    ap.add_argument("--negatives", choices=["main", "holdout", "holdout2", "holdout3", "holdout4"], default="main",
+    ap.add_argument("--negatives", choices=["main", "holdout", "holdout2", "holdout3", "holdout4", "holdout5"], default="main",
                     help="Which hand-written hard negatives to write (holdout sets were never used for tuning).")
     args = ap.parse_args()
     r = random.Random(args.seed)
@@ -459,10 +554,12 @@ def main() -> None:
         "negatives": [
             {"id": f"neg-{i:03d}", "text": text, "spans": [], "tags": ["negatives", name]}
             for i, (name, text) in enumerate({"main": NEGATIVES, "holdout": HOLDOUT_NEGATIVES, "holdout2": HOLDOUT2_NEGATIVES,
-                                              "holdout3": HOLDOUT3_NEGATIVES, "holdout4": HOLDOUT4_NEGATIVES}[args.negatives])
+                                              "holdout3": HOLDOUT3_NEGATIVES, "holdout4": HOLDOUT4_NEGATIVES,
+                                              "holdout5": HOLDOUT5_NEGATIVES}[args.negatives])
         ],
         "long": gen_long(r, fake, sec, token_counter()),
     }
+    groups["extra"] = gen_extra(r, fake, sec)  # last, so the files above do not change
     args.out.mkdir(parents=True, exist_ok=True)
     for name, records in groups.items():
         with open(args.out / f"{name}.jsonl", "w") as f:
