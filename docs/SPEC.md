@@ -187,6 +187,7 @@ The user experience is one command, `keepmum claude` or `keepmum codex`, or the 
 | `keepmum types` / `keepmum rules` | What gets masked: types passed through, your own mask rules, exceptions, built-in rules turned off. |
 | `keepmum exclude` / `keepmum include` | Lets one project's Claude Code skip keepmum. |
 | `keepmum status` | Setup, protection and settings as JSON, for the Mac app. |
+| `keepmum audit list\|verify\|head\|export` | The tamper-evident audit log: requests, protection changes, starts and stops. |
 | `keepmum scan <file or ->` | Prints findings with values masked; exits 1 if anything is found. Usable as a pre-commit hook. |
 | `keepmum setup` | Downloads the Privacy Filter model once and checks its pinned SHA-256. |
 | `keepmum doctor` | Checks macOS version, Apple silicon, pf-serve and the model (with a canary), the install salt, protection, routes around the proxy, port free. |
@@ -221,6 +222,9 @@ WebSearch = "keep"
 
 [log]
 level = "info"                       # never logs values, only type + counts
+
+[audit]
+keep_days = 90                       # audit log retention; shortening it is recorded as weakening
 ```
 
 `keepmum claude` writes logs to `~/.config/keepmum/keepmum.log` (mode 0600), because the terminal belongs to Claude Code, and records its port in `~/.config/keepmum/runtime.json` (0600) for the Mac app. It refuses to start if any Claude Code settings file sets `ANTHROPIC_BASE_URL` or a Bedrock/Vertex/Foundry switch, or if such a switch is in the environment, since that could route traffic around the proxy. An `ANTHROPIC_BASE_URL` already in the environment (another gateway) becomes keepmum's upstream.
@@ -242,6 +246,7 @@ keepmum/
     responses.py    # Responses API restore, whole and streamed
     vault.py        # in-memory map, HMAC ids, install salt
     stats.py        # counts-only stats feed, history file, flow totals
+    audit.py        # tamper-evident audit log: hash chain, settings diffs, verify
     protect.py      # Claude Code settings, project exclusions
     clients.py      # Codex, pi and opencode configs, `keepmum codex`
     launch.py       # `keepmum claude`, the VS Code wrapper, background server
@@ -272,7 +277,43 @@ keepmum/
 - [x] **More rules, and the rules without the model (Oct 29, 2026).** 69 more L1 rules (96): 52 provider formats from gitleaks and TruffleHog, 11 for secrets in flags, config files and sentences, and 6 for personal data (emails, phones, SSNs, dates of birth). `detect.model = false` runs L1 alone and switches while running. Measured on dev and a new held-out set written before the rules (`bench/results/RULES.md`): with the rules alone, secret recall went from 0.78 to 0.99 and personal-data recall from 0.39 to 0.77, at precision 0.996, with no hard negative flagged; the earlier held-out sets flag exactly what they flagged before.
 - [x] **Built-in rules turned off (Oct 29, 2026).** `[rules] off` (`keepmum rules off|on`, the Detection page's Top rules) turns off a rule or check by name; rules that find secrets need `--yes` or a confirmation. The vault records which detectors found each value, so the known-values pass lets a value masked earlier go once every detector that found it is off or was your own rule and is gone, or the value has an exception. Before this, an exception added mid-session did not unmask a value already masked.
 - [x] **Logs page (Oct 29, 2026).** `GET /_keepmum/findings` (stats token) lists the values masked in new text, newest first: type, detector and rule, length, agent, outcome, and the first and last character of values of 8 or more characters. Kept in memory (the last 2,000), never in `history.jsonl`; `[log] previews = false` drops the characters, including those already kept. The Mac app's Logs page searches and filters it. This relaxes the earlier rule that the feed carries no part of a value, at the user's request; values under 8 characters still show none.
+- [x] **Audit log (Oct 30, 2026).** The first of three privacy and security features that set keepmum apart from general gateways (then an exposure scan of local transcripts, then an egress guard for shell commands). See *Audit log* below. Verified end to end with `keepmum serve` against a local stand-in provider: start, the request with its restore decision, an `observe on` marked as weakening, and the stop on SIGTERM, in a chain that verifies, with no value or placeholder in the file.
 - [ ] **M6 Ship.** README, Homebrew tap, name check on GitHub, PyPI and Homebrew. *Oct 26, 2026: Keepmum.app is self-contained (bundled Python runtime, pf-serve, a LaunchAgent via SMAppService) and sets itself up: model download, background service, `keepmum protect`. Left: Developer ID signing and notarization, a DMG, a Homebrew cask, updates, and Windows (pf-serve already builds there; the app would need its own UI).*
+
+## Audit log
+
+**Why.** A masking proxy says what it masks; it cannot show afterwards what it did, or that nobody turned it down. The audit log answers "what left this Mac, what got real values back, and who weakened protection, when", in a form that shows tampering. General gateways keep a masking record but not one that can be checked, and they do not record changes to their own settings.
+
+**File.** `~/.config/keepmum/audit.jsonl` (0600), one canonical JSON entry per line (sorted keys, no spaces), shared by every keepmum process: the app's service, `keepmum claude` and `codex`, the VS Code wrapper, and the CLI. Appends take an exclusive `flock` on `audit.lock`, read the last whole entry, and write one line, so concurrent processes keep one chain. `audit.head.json` holds the newest `seq` and `hash`, and the last recorded settings state.
+
+**Entry.** `seq` (one more than the entry before), `ts`, `event`, the event's fields, `prev` (the hash of the entry before; 64 zeros for the first) and `hash` = SHA-256 of the entry's canonical JSON without `hash`.
+
+| Event | Fields | Weakens |
+| --- | --- | --- |
+| `request` | client, provider, path, outcome, status, `masked` by type, `new`, `found` (detector or rule id → count, new text only), `restored` by type, `tools` ([{tool, action restore\|keep, values}]), `unresolved` | |
+| `config` | `by` (the keepmum command, "(from Keepmum.app)" when the app ran it, or "config file" for an edit seen by a running proxy), `changes` ([{setting, from/to or added/removed, weakens}]), `weakens`; the first one is a `baseline` with the full state, compared with the defaults | when any change weakens |
+| `protect` | action, clients, by | off |
+| `exclude` / `include` | project, by | exclude |
+| `start` / `stop` | mode, pid, and at start the port, version, detector, pii, observe | |
+| `pruned` | dropped, `through` {seq, hash}, keep_days | |
+
+Bodyless requests that carry no content (a GET of `/v1/models`) are not audited; blocked and rejected ones always are. A tool call is listed when its input held placeholders: `restore` means the tool ran with real values, `keep` that it kept the placeholders (WebFetch, WebSearch, MCP tools by default).
+
+**Never recorded:** values, previews, placeholders, headers, bodies, command arguments. Allowlist strings and patterns, and the patterns of your own mask rules, are recorded as fingerprints: the first 12 hex digits of HMAC-SHA256(install salt, kind + value). They show that an entry was added or removed, and which, without what it says.
+
+**What weakens.** observe turned on; the model or personal data turned off; a type passed through; a built-in rule turned off; one of your mask rules removed; an allowlist entry added; a tool switched from keep to restore; a new upstream (flagged for a look); a shorter retention; `protect off`; `exclude`.
+
+**Who notices a change.** The CLI records it right after writing the file. A running proxy records changes it sees when the file changes (an edit by hand). At start, a proxy records changes made while none was running. The last recorded state in `audit.head.json` makes each change recorded once, whichever process sees it first.
+
+**Verify.** `keepmum audit verify` checks every entry's hash, every `prev` link and every `seq` step, that the log starts at the beginning or where a `pruned` entry says it was cut, and that it is not shorter than `audit.head.json` says. `--anchor <seq>:<hash>` checks the log still holds that entry with that hash (at least 12 hex digits; an anchor older than a recorded pruning cannot be checked and is not an error). `--file` checks an `audit export`, which starts and ends wherever its period did.
+
+**Limits, stated where users read them.** Someone who can write the file can rewrite it from some point on, recomputing every hash, and update `audit.head.json` too; only a head kept elsewhere catches that. `keepmum audit head` prints it; the Mac app keeps the head of its last good check and verifies against it. A keyed signature would not help: its key would be in a file the same user can read, because the Keychain cannot be shared by keepmum's processes without a prompt (the reason the install salt moved to a file). An audit write that fails is logged and the request goes on: auditing never blocks a request, and the gap shows as a start with no stop or a missing `seq`.
+
+**Retention.** `[audit] keep_days` (90; 1–3650). The background service prunes at start: entries older than that are removed, and a `pruned` entry records how many and the hash they ended with. Pruning never passes an unreadable line.
+
+**CLI.** `keepmum audit list [--since 7d] [--weakening] [--no-requests] [--limit 50] [--json]`, `verify [--anchor] [--file] [--json]`, `head [--json]`, `export [--since 30d] [--format jsonl|csv] [-o file] [--weakening]`. An export file is written 0600.
+
+**Mac app.** The Audit page runs `keepmum audit list --no-requests` and `verify --anchor <saved head>` when it opens and every 15 s, shows whether the log is intact, the head with a copy button, and the changes, newest first, with the weakening ones marked and who made them. It saves the head only after a good check. The app runs every CLI command with `KEEPMUM_CALLER=Keepmum.app`.
 
 ## Testing, safety rules, risks
 

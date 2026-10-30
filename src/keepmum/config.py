@@ -22,6 +22,9 @@
     default = "restore"
     WebFetch = "keep"
 
+    [audit]
+    keep_days = 90         # how long the audit log keeps entries (`keepmum audit`)
+
     [log]
     level = "info"
     previews = true        # the Logs page shows the first and last character of masked values (in memory only)
@@ -44,6 +47,7 @@ _SCHEMA = {
     "allowlist": {"strings": list, "patterns": list},
     "rules": {"mask": list, "off": list},
     "log": {"level": str, "previews": bool},
+    "audit": {"keep_days": int},
 }
 LOG_LEVELS = ("debug", "info", "warning", "error")
 
@@ -67,6 +71,7 @@ class Config:
     restore: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_POLICY))
     log_level: str = "info"
     log_previews: bool = True
+    audit_keep_days: int = 90
     path: Path | None = None
 
 
@@ -95,7 +100,7 @@ def load(path: Path | None = None) -> Config:
                 raise ConfigError(f"{path}: unknown key {section}.{key}")
             if not isinstance(value, want) or (want is int and isinstance(value, bool)):
                 raise ConfigError(f"{path}: {section}.{key} must be {want.__name__}")
-    server, detect, allow, log, rules = (raw.get(k, {}) for k in ("server", "detect", "allowlist", "log", "rules"))
+    server, detect, allow, log, rules, audit = (raw.get(k, {}) for k in ("server", "detect", "allowlist", "log", "rules", "audit"))
     cfg.port = server.get("port", cfg.port)
     if not 1 <= cfg.port <= 65535:
         raise ConfigError(f"{path}: server.port must be 1-65535")
@@ -149,6 +154,9 @@ def load(path: Path | None = None) -> Config:
     cfg.log_previews = log.get("previews", cfg.log_previews)
     if cfg.log_level not in LOG_LEVELS:
         raise ConfigError(f"{path}: log.level must be one of {', '.join(LOG_LEVELS)}")
+    cfg.audit_keep_days = audit.get("keep_days", cfg.audit_keep_days)
+    if not 1 <= cfg.audit_keep_days <= 3650:
+        raise ConfigError(f"{path}: audit.keep_days must be 1-3650")
     return cfg
 
 

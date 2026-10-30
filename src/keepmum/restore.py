@@ -28,6 +28,25 @@ def tool_policy(name: str, policy: dict[str, str]) -> str:
     return policy.get("default", "restore")
 
 
+def note_tool(counts: Counter | None, name: str, policy: dict[str, str], value) -> None:
+    """Record a tool call whose input holds placeholders, and what the policy did with them, for
+    the audit log: counts[("tool", name, "restore" | "keep")] += placeholders in the input."""
+    if counts is None:
+        return
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    n = len(PLACEHOLDER.findall(text))
+    if n:
+        counts[(TOOL, name, tool_policy(name, policy))] += n
+
+
+def take_tools(counts: Counter) -> list[dict]:
+    """Remove the tool decisions note_tool put in counts: [{tool, action, values}]."""
+    keys = [k for k in counts if isinstance(k, tuple) and k[0] == TOOL]
+    return [{"tool": k[1], "action": k[2], "values": counts.pop(k)} for k in sorted(keys)]
+
+
+TOOL = "tool"
+
 # Key in the counts Counter for placeholders the vault does not know: the model reused one this
 # process never made (another keepmum with another salt, or one restarted since). They stay as
 # they are, and the proxy reports them.
@@ -80,8 +99,12 @@ def restore_response(body: dict, vault: Vault, policy: dict[str, str] = DEFAULT_
             out.append(block)
         elif block.get("type") == "text":
             out.append({**block, "text": restore_text(block.get("text", ""), vault, counts)})
-        elif block.get("type") == "tool_use" and tool_policy(block.get("name", ""), policy) == "restore":
-            out.append({**block, "input": _values(block.get("input"), vault, counts)})
+        elif block.get("type") == "tool_use":
+            note_tool(counts, block.get("name", ""), policy, block.get("input"))
+            if tool_policy(block.get("name", ""), policy) == "restore":
+                out.append({**block, "input": _values(block.get("input"), vault, counts)})
+            else:
+                out.append(block)
         else:
             out.append(block)
     return {**body, "content": out}
@@ -207,6 +230,7 @@ class StreamRestorer:
             return self._emit("content_block_delta", delta)
         if state["type"] == "tool_use" and state["json"]:
             partial = "".join(state["json"])
+            note_tool(self.counts, state["name"], self.policy, partial)
             if tool_policy(state["name"], self.policy) == "restore":
                 partial = self._restore_json(partial)
             delta = {"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": partial}}

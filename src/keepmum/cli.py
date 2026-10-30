@@ -59,6 +59,18 @@ def _config():
         raise typer.Exit(2)
 
 
+def _audit_config(path, command: str) -> None:
+    """Record a settings change in the audit log, as made by `command`."""
+    from .audit import AuditLog, caller
+    from .config import ConfigError, load
+
+    try:
+        cfg = load(path)
+    except ConfigError:
+        return
+    AuditLog(keep_days=cfg.audit_keep_days).note_config(cfg, caller(command))
+
+
 def _pipeline_or_exit(pii: bool, rules_only: bool, who: str):
     from .detect.pipeline import ModelUnavailable, default_pipeline
 
@@ -242,6 +254,12 @@ def protect(
         typer.echo("keepmum protect: use on, off or status, and --client claude|codex|pi|opencode", err=True)
         raise typer.Exit(2)
     result = protect_clients(action, cfg.port, client or None)
+    if action in ("on", "off"):
+        from .audit import AuditLog, caller
+
+        changed = [name for name, st in result.items() if st.get("installed") and not st.get("error")]
+        if changed:
+            AuditLog().append("protect", action=action, clients=changed, by=caller(f"keepmum protect {action}"))
     if as_json:
         typer.echo(json.dumps(result))
         return
@@ -280,6 +298,7 @@ def observe(action: str = typer.Argument("status", help="on, off, or status")) -
         except (ConfigError, OSError) as e:
             typer.echo(f"keepmum observe: {e}", err=True)
             raise typer.Exit(1)
+        _audit_config(cfg.path, f"keepmum observe {action}")
         on = action == "on"
     elif action == "status":
         on = cfg.observe
@@ -309,6 +328,7 @@ def model(action: str = typer.Argument("status", help="on, off, or status")) -> 
         except (ConfigError, OSError) as e:
             typer.echo(f"keepmum model: {e}", err=True)
             raise typer.Exit(1)
+        _audit_config(cfg.path, f"keepmum model {action}")
         on = action == "on"
     elif action == "status":
         on = cfg.model
@@ -351,6 +371,7 @@ def types(
         except (ConfigError, OSError) as e:
             typer.echo(f"keepmum types: {e}", err=True)
             raise typer.Exit(1)
+        _audit_config(cfg.path, f"keepmum types {action}")
     personal = [t for t in TYPES if t != "SECRET"]
     state = {t: ("pass" if t in passed else "mask" if t == "SECRET" or cfg.pii else "off: personal data is off")
              for t in TYPES}
@@ -392,7 +413,7 @@ def rules_list(as_json: bool = typer.Option(False, "--json", help="Print JSON.")
         typer.echo(f"off   {r}  (built-in; `keepmum rules on {r}` turns it back on)", err=True)
 
 
-def _save_rules(cfg, section: str, key: str, value) -> None:
+def _save_rules(cfg, section: str, key: str, value, command: str) -> None:
     from .config import ConfigError, set_value
 
     try:
@@ -400,6 +421,7 @@ def _save_rules(cfg, section: str, key: str, value) -> None:
     except (ConfigError, OSError) as e:
         typer.echo(f"keepmum rules: {e}", err=True)
         raise typer.Exit(1)
+    _audit_config(cfg.path, f"keepmum rules {command}")
     typer.echo("saved; running proxies apply it on their next request", err=True)
 
 
@@ -424,7 +446,7 @@ def rules_mask(
         typer.echo(f"keepmum rules: --type must be one of {', '.join(TYPES)}", err=True)
         raise typer.Exit(2)
     rule = {"name": name or f"rule {len(cfg.mask_rules) + 1}", "pattern": pattern, "type": kind.upper()}
-    _save_rules(cfg, "rules", "mask", [*cfg.mask_rules, rule])
+    _save_rules(cfg, "rules", "mask", [*cfg.mask_rules, rule], "mask")
 
 
 @rules_app.command("allow")
@@ -442,9 +464,9 @@ def rules_allow(
         except re.error as e:
             typer.echo(f"keepmum rules: bad pattern: {e}", err=True)
             raise typer.Exit(2)
-        _save_rules(cfg, "allowlist", "patterns", [*cfg.allow_patterns, value])
+        _save_rules(cfg, "allowlist", "patterns", [*cfg.allow_patterns, value], "allow")
     else:
-        _save_rules(cfg, "allowlist", "strings", [*cfg.allow_strings, value])
+        _save_rules(cfg, "allowlist", "strings", [*cfg.allow_strings, value], "allow")
 
 
 @rules_app.command("remove")
@@ -460,7 +482,7 @@ def rules_remove(
         typer.echo("keepmum rules: no such rule; see `keepmum rules list`", err=True)
         raise typer.Exit(2)
     section, key, items = table[kind]
-    _save_rules(cfg, section, key, [x for i, x in enumerate(items) if i != index])
+    _save_rules(cfg, section, key, [x for i, x in enumerate(items) if i != index], "remove")
 
 
 @rules_app.command("builtin")
@@ -498,14 +520,14 @@ def rules_off(
         typer.echo(f"keepmum rules: {', '.join(secret)} finds secrets; with it off, what only it finds reaches the "
                    "provider unmasked. Add --yes if you mean it, or `keepmum rules allow` one value instead", err=True)
         raise typer.Exit(2)
-    _save_rules(cfg, "rules", "off", [*cfg.off_rules, *(n for n in dict.fromkeys(names) if n not in cfg.off_rules)])
+    _save_rules(cfg, "rules", "off", [*cfg.off_rules, *(n for n in dict.fromkeys(names) if n not in cfg.off_rules)], "off")
 
 
 @rules_app.command("on")
 def rules_on(names: list[str] = typer.Argument(..., help="Built-in rule names turned off earlier.")) -> None:
     """Turn built-in rules back on."""
     cfg = _config()
-    _save_rules(cfg, "rules", "off", [r for r in cfg.off_rules if r not in names])
+    _save_rules(cfg, "rules", "off", [r for r in cfg.off_rules if r not in names], "on")
 
 
 @app.command()
@@ -527,6 +549,9 @@ def exclude(
     except ProtectError as e:
         typer.echo(f"keepmum exclude: {e}", err=True)
         raise typer.Exit(1)
+    from .audit import AuditLog, caller
+
+    AuditLog().append("exclude", project=str(root), to=cfg.upstream, by=caller("keepmum exclude"))
     typer.echo(f"excluded {root}: Claude Code there goes straight to {cfg.upstream}, unscanned.\n"
                "It applies once the folder is trusted in Claude Code; sessions already open there switch now.", err=True)
 
@@ -542,6 +567,9 @@ def include(path: Path = typer.Argument(None, help="A folder in the project (def
     except ProtectError as e:
         typer.echo(f"keepmum include: {e}", err=True)
         raise typer.Exit(1)
+    from .audit import AuditLog, caller
+
+    AuditLog().append("include", project=str(root), by=caller("keepmum include"))
     typer.echo(f"included {root} again. Restart Claude Code sessions open there: a running session keeps "
                "going straight to the API until it restarts.", err=True)
 
@@ -578,3 +606,159 @@ def doctor() -> None:
     from .doctor import run
 
     raise typer.Exit(run())
+
+
+audit_app = typer.Typer(help="The audit log: what keepmum did with each request, and every change to its protection. "
+                             "Counts and names only, never values.", no_args_is_help=True)
+app.add_typer(audit_app, name="audit")
+
+
+def _since(text: str | None) -> float | None:
+    """`--since`: 30d, 12h, 90m, or a date (2026-10-01)."""
+    import re
+    import time
+    from datetime import datetime
+
+    if not text:
+        return None
+    m = re.fullmatch(r"(\d+)([dhm])", text.strip())
+    if m:
+        return time.time() - int(m.group(1)) * {"d": 86400, "h": 3600, "m": 60}[m.group(2)]
+    try:
+        return datetime.fromisoformat(text.strip()).timestamp()
+    except ValueError:
+        typer.echo("keepmum audit: --since takes 30d, 12h, 90m or a date such as 2026-10-01", err=True)
+        raise typer.Exit(2)
+
+
+def _audit_entries(since: str | None, weakening: bool, requests: bool = True) -> list[dict]:
+    from .audit import read, weakens
+
+    start = _since(since)
+    return [e for e in read() if (start is None or e.get("ts", 0) >= start) and (not weakening or weakens(e))
+            and (requests or e.get("event") != "request")]
+
+
+@audit_app.command("list")
+def audit_list(
+    since: str = typer.Option("7d", help="How far back: 30d, 12h, 90m, or a date."),
+    weakening: bool = typer.Option(False, "--weakening", help="Only changes that turned protection down."),
+    requests: bool = typer.Option(True, "--requests/--no-requests", help="Include each request, or only the other events."),
+    limit: int = typer.Option(50, help="The newest N entries (0: all)."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON (for the Mac app)."),
+) -> None:
+    """The newest entries, oldest first."""
+    import json
+    from datetime import datetime
+
+    from .audit import summary, weakens
+
+    entries = _audit_entries(since, weakening, requests)
+    if limit:
+        entries = entries[-limit:]
+    if as_json:
+        typer.echo(json.dumps([{**e, "summary": summary(e), "weakens": weakens(e)} for e in entries]))
+        return
+    if not entries:
+        typer.echo("no audit entries in that period", err=True)
+    for e in entries:
+        when = datetime.fromtimestamp(e.get("ts", 0)).strftime("%Y-%m-%d %H:%M:%S")
+        flag = "!" if weakens(e) else " "
+        by = f"  [{e['by']}]" if e.get("by") else ""
+        typer.echo(f"{e.get('seq', '?'):>7} {when} {flag} {e.get('event', '?'):8} {summary(e)}{by}")
+
+
+@audit_app.command("verify")
+def audit_verify(
+    anchor: str = typer.Option(None, help="<seq>:<hash> from an earlier `keepmum audit head`: the log must still hold it."),
+    file: Path = typer.Option(None, "--file", help="Check a JSONL file from `keepmum audit export` instead of the log."),
+    as_json: bool = typer.Option(False, "--json", help="Print JSON (for the Mac app)."),
+) -> None:
+    """Check that no entry was edited, added, removed or reordered. Exits 1 if any was."""
+    import json
+
+    from .audit import verify
+
+    result = verify(file, anchor=anchor, export=file is not None)
+    if as_json:
+        typer.echo(json.dumps(result))
+    else:
+        last = result["last"]
+        if result["ok"]:
+            typer.echo(f"audit log intact: {result['entries']} entries"
+                       + (f", seq {result['first']['seq']} to {last['seq']}, head {last['seq']}:{last['hash'][:16]}" if last else ""),
+                       err=True)
+        else:
+            typer.echo(f"AUDIT LOG BROKEN: {len(result['problems'])} problem(s)", err=True)
+            for p in result["problems"][:20]:
+                typer.echo(f"  {p}", err=True)
+            if len(result["problems"]) > 20:
+                typer.echo(f"  … and {len(result['problems']) - 20} more", err=True)
+        typer.echo("The chain shows edits and removals inside the log. A rewrite of the whole log is caught only "
+                   "against a head saved elsewhere: `keepmum audit head`, then `verify --anchor`.", err=True)
+    raise typer.Exit(0 if result["ok"] else 1)
+
+
+@audit_app.command("head")
+def audit_head(as_json: bool = typer.Option(False, "--json", help="Print JSON.")) -> None:
+    """The newest entry's <seq>:<hash>. Keep it somewhere else (a note, a ticket, another machine);
+    `keepmum audit verify --anchor` then shows whether the log was rewritten since."""
+    import json
+
+    from .audit import read
+
+    entries = read()
+    if not entries:
+        typer.echo("the audit log is empty", err=True)
+        raise typer.Exit(1)
+    last = entries[-1]
+    if as_json:
+        typer.echo(json.dumps({"seq": last["seq"], "hash": last["hash"], "ts": last.get("ts")}))
+    else:
+        typer.echo(f"{last['seq']}:{last['hash']}")
+
+
+@audit_app.command("export")
+def audit_export(
+    since: str = typer.Option("30d", help="How far back: 30d, 12h, 90m, or a date."),
+    fmt: str = typer.Option("jsonl", "--format", help="jsonl (the entries as written, checkable) or csv (one row each)."),
+    output: Path = typer.Option(None, "--output", "-o", help="Write to a file instead of standard output."),
+    weakening: bool = typer.Option(False, "--weakening", help="Only changes that turned protection down."),
+) -> None:
+    """Export entries for a review or an incident ticket. JSONL keeps each entry exactly as written,
+    so its hashes still check; CSV is for reading."""
+    import csv
+    import io
+    import json
+    from datetime import datetime, timezone
+
+    from .audit import summary, verify, weakens
+
+    if fmt not in ("jsonl", "csv"):
+        typer.echo("keepmum audit: --format is jsonl or csv", err=True)
+        raise typer.Exit(2)
+    entries = _audit_entries(since, weakening)
+    buf = io.StringIO()
+    if fmt == "jsonl":
+        for e in entries:
+            buf.write(json.dumps(e, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
+    else:
+        w = csv.writer(buf)
+        w.writerow(["seq", "time_utc", "event", "weakens", "client", "provider", "outcome", "masked", "new", "summary", "hash"])
+        for e in entries:
+            w.writerow([e.get("seq"), datetime.fromtimestamp(e.get("ts", 0), timezone.utc).isoformat(timespec="seconds"),
+                        e.get("event"), "yes" if weakens(e) else "", e.get("client", ""), e.get("provider", ""),
+                        e.get("outcome", ""), sum((e.get("masked") or {}).values()) if e.get("event") == "request" else "",
+                        e.get("new", ""), summary(e), e.get("hash")])
+    if output:
+        import os
+
+        fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(buf.getvalue())
+        result = verify()
+        typer.echo(f"wrote {len(entries)} entries to {output}; the log is "
+                   + ("intact" if result["ok"] else f"BROKEN ({len(result['problems'])} problems: `keepmum audit verify`)"),
+                   err=True)
+    else:
+        typer.echo(buf.getvalue(), nl=False)

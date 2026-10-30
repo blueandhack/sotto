@@ -69,9 +69,17 @@ def run() -> int:
     else:
         _check(r, OK, "install salt not created yet (created on first run)")
 
-    for f in (Path.home() / ".config" / "keepmum" / "stats-token", launch.LOG_FILE, launch.RUNTIME_FILE):
+    from . import audit
+
+    for f in (Path.home() / ".config" / "keepmum" / "stats-token", launch.LOG_FILE, launch.RUNTIME_FILE, audit.audit_file()):
         if f.exists() and f.stat().st_mode & 0o077:
             _check(r, FAIL, f"{f} is readable by other users (mode {f.stat().st_mode & 0o777:o})")
+    if audit.audit_file().exists():
+        checked = audit.verify()
+        _check(r, OK if checked["ok"] else FAIL, f"audit log intact ({checked['entries']} entries)" if checked["ok"]
+               else f"audit log changed outside keepmum: {checked['problems'][0]} (`keepmum audit verify`)")
+    else:
+        _check(r, OK, "audit log not started yet (keepmum starts it on first use)")
 
     claude = shutil.which("claude")
     if claude:

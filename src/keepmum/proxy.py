@@ -42,7 +42,7 @@ from starlette.routing import Route
 
 from .redact import Redactor
 from .responses import ResponsesStreamRestorer, restore_responses
-from .restore import DEFAULT_POLICY, StreamRestorer, restore_response
+from .restore import DEFAULT_POLICY, StreamRestorer, restore_response, take_tools
 from .stats import Stats, client_of, flows, provider_of
 
 log = logging.getLogger("keepmum")
@@ -57,6 +57,16 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 HOP_HEADERS = frozenset({"host", "content-length", "connection", "keep-alive", "proxy-connection", "transfer-encoding",
                          "te", "trailer", "upgrade", "accept-encoding", "x-keepmum-client"})
 RESPONSE_DROP = frozenset({"content-length", "content-encoding", "transfer-encoding", "connection", "keep-alive"})
+
+
+def found_by(findings: list[dict]) -> Counter:
+    """Which detectors found the values in a request's new text: a built-in rule by its id, your
+    own rule as user:<name>, or model, or known (masked before, found again by exact match)."""
+    out = Counter()
+    for f in findings:
+        detector, rule = f["detector"], f["rule"]
+        out[rule if detector == "rules" else f"user:{rule}" if detector == "user" else detector] += 1
+    return out
 
 
 def api_error(status: int, kind: str, message: str) -> JSONResponse:
@@ -109,13 +119,14 @@ class Proxy:
     def __init__(self, redactor: Redactor, upstream: str = UPSTREAM, policy: dict[str, str] | None = None,
                  client: httpx.AsyncClient | None = None, stats: Stats | None = None, stats_token: str | None = None,
                  info: dict | None = None, observe=None, openai_upstream: str = OPENAI_UPSTREAM,
-                 chatgpt_upstream: str = CHATGPT_UPSTREAM, previews=True):
+                 chatgpt_upstream: str = CHATGPT_UPSTREAM, previews=True, audit=None):
         self.redactor = redactor
         self.upstream = upstream.rstrip("/")
         self.prefixed = {"/openai": openai_upstream.rstrip("/"), "/chatgpt": chatgpt_upstream.rstrip("/")}
         self.policy = policy or DEFAULT_POLICY
         self.client = client or httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10))
         self.stats = stats or Stats()
+        self.audit = audit  # an audit.AuditLog: every request, without values (None: not audited)
         self.stats_token = stats_token
         self.info = info or {}  # shown in the stats feed: mode, pii, detector, version
         # A callable, re-checked per request (config.ObserveFlag), or a fixed bool.
@@ -157,7 +168,7 @@ class Proxy:
         if body or request.method not in ("GET", "HEAD", "OPTIONS"):
             # An endpoint keepmum does not scan must not carry content out unscanned.
             log.warning("blocked %s %s: endpoint is not scanned", request.method, path)
-            self.stats.record(path, "blocked", 403, origin=self._origin(request, t))
+            self._record(path, "blocked", 403, origin=self._origin(request, t))
             return api_error(403, "permission_error", f"refusing to forward {request.method} {path}: keepmum does not scan this endpoint")
         return await self._forward_raw(request, t)
 
@@ -213,14 +224,14 @@ class Proxy:
             if not isinstance(body, dict):
                 raise ValueError("not an object")
         except Exception:
-            self.stats.record(path, "rejected", 400, origin=origin)
+            self._record(path, "rejected", 400, origin=origin)
             return api_error(400, "invalid_request_error", "request body is not a JSON object keepmum can read; nothing was sent")
         started = time.perf_counter()
         try:
-            masked, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api, origin)
+            masked, counts, new, found = await anyio.to_thread.run_sync(self._redact, body, t.api, origin)
         except Exception as e:  # any detector or redaction failure: block, never send raw
             log.error("blocked %s: scan failed (%s)", path, type(e).__name__)
-            self.stats.record(path, "blocked", 500, origin=origin)
+            self._record(path, "blocked", 500, origin=origin)
             return api_error(500, "api_error", "could not scan this request, so it was not sent")
         scan_ms = (time.perf_counter() - started) * 1000
         payload = json.dumps(masked, ensure_ascii=False).encode()
@@ -233,11 +244,11 @@ class Proxy:
             headers.append(("content-encoding", "zstd"))
         try:
             if masked.get("stream") and t.path not in ("/v1/messages/count_tokens",):
-                return await self._stream(url, headers, payload, path, t, scan_ms, counts, new, origin=origin)
+                return await self._stream(url, headers, payload, path, t, scan_ms, counts, new, origin=origin, found=found)
             resp = await self.client.post(url, headers=headers, content=payload)
         except httpx.HTTPError as e:
             log.error("upstream error on %s: %s", path, type(e).__name__)
-            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin)
+            self._record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin, found=found)
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
         restored = Counter()
         content = resp.content
@@ -248,19 +259,19 @@ class Proxy:
             except ValueError:
                 pass  # not JSON: pass it through as it came
         self._warn_unresolved(path, restored)
-        self.stats.record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new, origin=origin)
+        self._record(path, "forwarded", resp.status_code, scan_ms, counts, restored, new=new, origin=origin, found=found)
         log.info("%s -> %d redacted=%s restored=%s scan=%.0fms", path, resp.status_code, dict(counts), dict(restored), scan_ms)
         return Response(content, status_code=resp.status_code, headers=self._response_headers(resp))
 
     async def _observed(self, request: Request, t: Target, raw: bytes) -> Response:
         """Observe mode: count what masking would have done, then send the request unchanged."""
         path, origin = request.url.path, self._origin(request, t)
-        counts, new, scan_ms, body = Counter(), 0, None, None
+        counts, new, scan_ms, body, found = Counter(), 0, None, None, None
         try:
             body = json.loads(decode_body(raw, request.headers.get("content-encoding", "")))
             if isinstance(body, dict):
                 started = time.perf_counter()
-                _, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api, origin, "observed")
+                _, counts, new, found = await anyio.to_thread.run_sync(self._redact, body, t.api, origin, "observed")
                 scan_ms = (time.perf_counter() - started) * 1000
         except Exception as e:  # observing never stops a request
             log.warning("observe %s: not scanned (%s)", path, type(e).__name__)
@@ -268,12 +279,13 @@ class Proxy:
         headers = self._headers(request, keep_encoding=True)
         try:
             if t.path != "/v1/messages/count_tokens" and isinstance(body, dict) and body.get("stream"):
-                return await self._stream(url, headers, raw, path, t, scan_ms, counts, new, outcome="observed", origin=origin)
+                return await self._stream(url, headers, raw, path, t, scan_ms, counts, new, outcome="observed", origin=origin,
+                                          found=found)
             resp = await self.client.post(url, headers=headers, content=raw)
         except httpx.HTTPError as e:
-            self.stats.record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin)
+            self._record(path, "upstream_error", 502, scan_ms, counts, new=new, origin=origin, found=found)
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
-        self.stats.record(path, "observed", resp.status_code, scan_ms, counts, new=new, origin=origin)
+        self._record(path, "observed", resp.status_code, scan_ms, counts, new=new, origin=origin, found=found)
         log.info("%s -> %d (observe: sent unmasked) would mask=%s", path, resp.status_code, dict(counts))
         return Response(resp.content, status_code=resp.status_code, headers=self._response_headers(resp))
 
@@ -283,16 +295,34 @@ class Proxy:
         named = "".join(c for c in request.headers.get("x-keepmum-client", "").lower() if c.isalnum() or c in "-_.")[:32]
         return named or client_of(request.headers.get("user-agent", "")), t.provider
 
+    def _record(self, path: str, outcome: str, status: int, scan_ms: float | None = None, counts: Counter | None = None,
+                restored: Counter | None = None, new: int = 0, origin: tuple[str, str] | None = None,
+                found: Counter | None = None) -> None:
+        """Count a request for the stats feed, and add it to the audit log. Bodyless checks that
+        carried no content (a GET of /v1/models) are counted but not audited."""
+        tools = take_tools(restored) if restored else []
+        self.stats.record(path, outcome, status, scan_ms, counts, restored, new=new, origin=origin)
+        if self.audit is None or (scan_ms is None and outcome in ("forwarded", "observed")):
+            return
+        from .restore import UNRESOLVED
+
+        client, provider = origin or (None, None)
+        restored = dict(restored or {})
+        unresolved = restored.pop(UNRESOLVED, 0)
+        self.audit.append("request", client=client, provider=provider, path=path, outcome=outcome, status=status,
+                          masked=dict(counts or {}), new=new, found=dict(found or {}) or None,
+                          restored=restored or None, tools=tools or None, unresolved=unresolved or None)
+
     @staticmethod
     def _warn_unresolved(path: str, restored: Counter) -> None:
         if restored.get("unresolved"):
             log.warning("%s: %d placeholder(s) in the reply could not be restored (made by another keepmum process, "
                         "or before a restart); they reach the client as placeholders", path, restored["unresolved"])
 
-    def _redact(self, body: dict, api: str = "messages", origin=None, outcome: str = "masked") -> tuple[dict, Counter, int]:
-        """The masked body, spans masked per type, and how many of them were in text this request
-        brought (the rest are earlier turns, which clients resend every time). What the new text
-        held goes to the Logs page, in memory only."""
+    def _redact(self, body: dict, api: str = "messages", origin=None, outcome: str = "masked") -> tuple[dict, Counter, int, Counter]:
+        """The masked body, spans masked per type, how many of them were in text this request
+        brought (the rest are earlier turns, which clients resend every time), and which detectors
+        found those. What the new text held goes to the Logs page, in memory only."""
         with self._scan_lock:
             self.redactor.counts.clear()
             self.redactor.fresh = 0
@@ -303,7 +333,7 @@ class Proxy:
             else:
                 masked = self.redactor.redact_request(body)
             self.stats.record_findings(self.redactor.findings, outcome, origin)
-            return masked, Counter(self.redactor.counts), self.redactor.fresh
+            return masked, Counter(self.redactor.counts), self.redactor.fresh, found_by(self.redactor.findings)
 
     def _restore(self, data: dict, counts: Counter, api: str = "messages") -> dict:
         with self._scan_lock:
@@ -312,7 +342,7 @@ class Proxy:
             return restore_response(data, self.redactor.vault, self.policy, counts)
 
     async def _stream(self, url, headers, payload, path, t: Target, scan_ms, counts, new=0, outcome="forwarded",
-                      origin=None) -> Response:
+                      origin=None, found=None) -> Response:
         req = self.client.build_request("POST", url, headers=headers, content=payload)
         resp = await self.client.send(req, stream=True)
         restored = Counter()
@@ -335,7 +365,7 @@ class Proxy:
             finally:
                 await resp.aclose()
                 self._warn_unresolved(path, restored)
-                self.stats.record(path, outcome, resp.status_code, scan_ms, counts, restored, new=new, origin=origin)
+                self._record(path, outcome, resp.status_code, scan_ms, counts, restored, new=new, origin=origin, found=found)
                 log.info("%s -> %d (stream) redacted=%s restored=%s scan=%.0fms", path, resp.status_code,
                          dict(counts), dict(restored), scan_ms)
 
@@ -354,7 +384,7 @@ class Proxy:
                                              headers=self._headers(request, keep_encoding=True), content=body or None)
         except httpx.HTTPError as e:
             return api_error(502, "api_error", f"upstream request failed ({type(e).__name__})")
-        self.stats.record(path, outcome, resp.status_code, origin=self._origin(request, t))
+        self._record(path, outcome, resp.status_code, origin=self._origin(request, t))
         log.info("%s %s -> %d (not scanned: no body)", request.method, path, resp.status_code)
         return Response(resp.content, status_code=resp.status_code, headers=self._response_headers(resp))
 

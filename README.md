@@ -141,6 +141,21 @@ keepmum include ~/Projects/some-repo     # scan it again
 
 `keepmum exclude` sets `env.ANTHROPIC_BASE_URL` to keepmum's upstream in the project's `.claude/settings.local.json` (at the git repository's root, as Claude Code reads it), which outranks `keepmum protect`. That file is never committed: keepmum refuses if git tracks it and otherwise adds it to `.git/info/exclude`. Claude Code applies it once you trust the folder; until then the project still goes through keepmum. Open sessions there switch at once when you exclude, but keep going straight to the API after `keepmum include` until they restart. In an excluded project the VS Code wrapper starts Claude Code without keepmum, and `keepmum claude` refuses. The Mac app lists exclusions in Settings.
 
+### Audit what keepmum did
+
+keepmum keeps a tamper-evident audit log: every request (who sent it, where it went, counts by type, which rules found what, and which tools got real values back or kept placeholders), every change to its protection (marked when it turns protection down, with the command that made it, or "config file" for an edit by hand), agents and projects taken out of its path, and each start and stop, so gaps in coverage show. Never a value, a preview or a placeholder: allowlist entries and your own patterns appear as keyed fingerprints.
+
+```sh
+keepmum audit list --weakening --since 30d   # what turned protection down, and who did it
+keepmum audit verify                         # exits 1 if an entry was edited, added, removed or reordered
+keepmum audit head                           # the newest <seq>:<hash>: keep it somewhere else
+keepmum audit verify --anchor 4211:9be41f07c2d8a35e   # the log still holds that entry, unchanged
+keepmum audit export --since 30d -o audit.jsonl       # for a review or a ticket (or --format csv)
+keepmum audit verify --file audit.jsonl               # check an export
+```
+
+Each entry carries the hash of the one before, so a change inside the log breaks the chain where it happened. Someone who can write the file could still rewrite it from some point on, or cut off its end; a head kept elsewhere catches that. The Mac app's Audit page checks the chain each time it opens, against the head it saved at its last good check. Entries are kept for `[audit] keep_days` (90 days), and a shorter retention is itself recorded as weakening.
+
 ### Scan files (pre-commit)
 
 ```sh
@@ -178,6 +193,9 @@ port = 7788            # for `keepmum serve`
 [log]
 level = "info"         # logs contain types and counts, never values
 previews = true        # the app's Logs page shows the first and last character of masked values (memory only)
+
+[audit]
+keep_days = 90         # how long the audit log keeps entries (`keepmum audit`)
 ```
 
 ## What keepmum stores, and where
@@ -189,6 +207,7 @@ previews = true        # the app's Logs page shows the first and last character 
 | Logs: paths, types, counts and timings, never values | `~/.config/keepmum/keepmum.log` (0600) |
 | Running proxy's port | `~/.config/keepmum/runtime.json` (0600) |
 | Request history for the Activity page: time, endpoint, outcome, counts by type; never values | `~/.config/keepmum/history.jsonl` (0600), last 20,000 requests |
+| Audit log: requests (counts, rules, restore decisions per tool), protection changes, starts and stops; never values | `~/.config/keepmum/audit.jsonl` (0600), with its head in `audit.head.json`; `[audit] keep_days`, 90 by default |
 | Masked values | Process memory only, cleared on exit |
 | The Logs page: per masked value its type, rule and length, and the first and last character of values of 8 or more characters | Process memory only (the last 2,000), cleared on exit; `[log] previews = false` keeps types and rules only |
 
@@ -196,7 +215,7 @@ keepmum makes no network calls except the request it forwards, and `keepmum setu
 
 ## Mac app
 
-A menu-bar app that sets keepmum up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per coding agent and provider, with hover highlighting; what was found and masked per type, with switches for what gets masked and an editor for your own rules; scan latency; every request in a history; and a searchable Logs page of what was masked, in light and dark mode. Its local stats feed carries counts, types and rules, and for the Logs page only the first and last character of each value of 8 or more characters (`g…w`), so it cannot show a whole secret even by mistake. See [mac/README.md](mac/README.md) to build it.
+A menu-bar app that sets keepmum up and runs it in the background, with a dashboard: live flow diagrams of requests going out and replies coming back, per coding agent and provider, with hover highlighting; what was found and masked per type, with switches for what gets masked and an editor for your own rules; scan latency; every request in a history; a searchable Logs page of what was masked; and an Audit page that checks the audit log and lists every change that turned protection down, in light and dark mode. Its local stats feed carries counts, types and rules, and for the Logs page only the first and last character of each value of 8 or more characters (`g…w`), so it cannot show a whole secret even by mistake. See [mac/README.md](mac/README.md) to build it.
 
 ## Accuracy and speed
 

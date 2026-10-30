@@ -48,7 +48,16 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
     info = {"mode": mode, "pii": pii, "detector": pipeline.name, "version": __version__, "apis": ["messages", "responses"]}
     from .stats import History, Stats
 
+    from .audit import AuditLog
+
+    audit = AuditLog(keep_days=cfg.audit_keep_days)
+    if mode == "serve":
+        audit.prune()  # the long-running service keeps the log to its retention
+    # Settings changed while no keepmum was running show up now; later ones as the file changes.
+    audit.note_config(cfg, "config file")
+
     def apply(new) -> None:  # the config file changed: detection settings apply on the next request
+        audit.note_config(new, "config file")
         pipeline.apply_settings(new.pass_types, new.mask_rules, new.allow_strings, new.allow_patterns, new.off_rules)
         if not rules_only:
             switch.want(new.model)
@@ -57,7 +66,7 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
     history = History(Path.home() / ".config" / "keepmum" / "history.jsonl")
     proxy = Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
                   stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe,
-                  previews=lambda: observe.config.log_previews)
+                  previews=lambda: observe.config.log_previews, audit=audit)
     switch = ModelSwitch(pipeline, proxy._scan_lock)
     return proxy
 
@@ -117,6 +126,7 @@ class BackgroundServer:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("127.0.0.1", port))
         self.port = self.sock.getsockname()[1]
+        self.proxy = proxy
         config = uvicorn.Config(proxy.app, log_level="warning", access_log=False, lifespan="off")
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(target=self.server.run, kwargs={"sockets": [self.sock]}, daemon=True)
@@ -129,11 +139,24 @@ class BackgroundServer:
                 raise RuntimeError("the proxy did not start")
             time.sleep(0.02)
         _write_runtime(self.port)
+        self._audit("start")
 
     def stop(self) -> None:
         self.server.should_exit = True
         self.thread.join(timeout=5)
         _clear_runtime()
+        self._audit("stop")
+
+    def _audit(self, event: str) -> None:
+        """A proxy began or ended: gaps in coverage show in the audit log. A stop that never
+        comes (a crash, a kill) shows as a start with no stop."""
+        audit = getattr(self.proxy, "audit", None)
+        if audit is None:
+            return
+        info = self.proxy.info
+        extra = {"port": self.port, "version": info.get("version"), "pii": info.get("pii"),
+                 "detector": info.get("detector"), "observe": self.proxy._observe()} if event == "start" else {}
+        audit.append(event, mode=info.get("mode"), pid=os.getpid(), **extra)
 
 
 def log_to_file(level: str) -> None:

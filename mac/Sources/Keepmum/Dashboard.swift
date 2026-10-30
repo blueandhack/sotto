@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
-    case overview, activity, logs, detection, performance, settings
+    case overview, activity, logs, audit, detection, performance, settings
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var icon: String {
@@ -9,6 +9,7 @@ enum Page: String, CaseIterable, Identifiable {
         case .overview: "square.grid.2x2"
         case .activity: "list.bullet.rectangle"
         case .logs: "text.magnifyingglass"
+        case .audit: "checkmark.seal"
         case .detection: "line.3.horizontal.decrease.circle"
         case .performance: "speedometer"
         case .settings: "gearshape"
@@ -31,6 +32,7 @@ struct Dashboard: View {
                 case .overview: OverviewPage(store: store)
                 case .activity: ActivityPage(store: store)
                 case .logs: LogsPage(store: store)
+                case .audit: AuditPage(engine: engine)
                 case .detection: DetectionPage(store: store, engine: engine)
                 case .performance: PerformancePage(store: store)
                 case .settings: SettingsPage(store: store, engine: engine, appearance: $appearance)

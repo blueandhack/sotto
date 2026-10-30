@@ -17,11 +17,12 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from .restore import DEFAULT_POLICY, StreamRestorer, _hold_from, _values, restore_text, tool_policy
+from .restore import DEFAULT_POLICY, StreamRestorer, _hold_from, _values, note_tool, restore_text, tool_policy
 from .vault import Vault
 
 
 def _restore_args(raw: str, name: str, vault: Vault, policy: dict, counts: Counter) -> str:
+    note_tool(counts, name, policy, raw)
     if tool_policy(name, policy) != "restore":
         return raw
     try:
@@ -43,8 +44,11 @@ def restore_item(item, vault: Vault, policy: dict = DEFAULT_POLICY, counts: Coun
     if kind == "function_call" and isinstance(item.get("arguments"), str):
         return {**item, "arguments": _restore_args(item["arguments"], item.get("name", ""), vault, policy, counts)}
     if kind == "custom_tool_call" and isinstance(item.get("input"), str):
+        note_tool(counts, item.get("name", ""), policy, item["input"])
         if tool_policy(item.get("name", ""), policy) == "restore":
             return {**item, "input": restore_text(item["input"], vault, counts)}
+    if kind == "local_shell_call":
+        note_tool(counts, "local_shell", policy, item.get("action"))
     if kind == "local_shell_call" and tool_policy("local_shell", policy) == "restore":
         return {**item, "action": _values(item.get("action"), vault, counts)}
     return item
@@ -118,8 +122,10 @@ class ResponsesStreamRestorer(StreamRestorer):
             whole = data.get(field) if isinstance(data.get(field), str) else "".join(call["parts"])
             if field == "arguments":
                 whole = _restore_args(whole, call["name"], v, p, c)
-            elif tool_policy(call["name"], p) == "restore":
-                whole = restore_text(whole, v, c)
+            else:
+                note_tool(c, call["name"], p, whole)
+                if tool_policy(call["name"], p) == "restore":
+                    whole = restore_text(whole, v, c)
             delta = b""
             if call["parts"]:
                 last = call["last"] or {}

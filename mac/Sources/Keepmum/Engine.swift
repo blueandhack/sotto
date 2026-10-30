@@ -76,7 +76,39 @@ final class Engine {
         var id: String { path }
     }
 
+    /// One entry of the audit log (`keepmum audit list --json`): what happened, never a value.
+    struct AuditEntry: Decodable, Equatable, Identifiable {
+        var seq: Int
+        var ts: Double
+        var event: String
+        var summary: String
+        var weakens: Bool
+        var by: String?
+        var id: Int { seq }
+        var date: Date { Date(timeIntervalSince1970: ts) }
+    }
+
+    /// `keepmum audit verify --json`: whether the chain holds, checked against the head the app saved last time.
+    struct AuditCheck: Decodable, Equatable {
+        struct Head: Decodable, Equatable {
+            var seq: Int
+            var hash: String
+        }
+        var ok: Bool
+        var entries: Int
+        var first: Head?
+        var last: Head?
+        var problems: [String]
+    }
+
     private(set) var status: Status?
+    private(set) var audit: [AuditEntry] = []
+    private(set) var auditCheck: AuditCheck?
+    /// The head saved at the last good check: a rewrite of the log since then fails against it.
+    @ObservationIgnored private var auditAnchor: String? {
+        get { UserDefaults.standard.string(forKey: "auditAnchor") }
+        set { UserDefaults.standard.set(newValue, forKey: "auditAnchor") }
+    }
     private(set) var serviceStatus: SMAppService.Status = .notRegistered
     /// 0...1 while the model downloads.
     private(set) var download: Double?
@@ -228,6 +260,25 @@ final class Engine {
         await act { try await self.check(["rules", "remove", kind, String(index)]) }
     }
 
+    // MARK: Audit (`keepmum audit`)
+
+    /// The audit log's events other than requests, and a check of its chain. The head of a good
+    /// check is kept, so the next check also catches the whole log being rewritten in between.
+    func loadAudit() async {
+        if previewing { return }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        if let out = try? await run(["audit", "list", "--json", "--no-requests", "--since", "3650d", "--limit", "500"]), out.code == 0,
+           let entries = try? decoder.decode([AuditEntry].self, from: Data(out.stdout.utf8)) {
+            audit = entries.reversed()
+        }
+        let args = ["audit", "verify", "--json"] + (auditAnchor.map { ["--anchor", $0] } ?? [])
+        if let out = try? await run(args), let check = try? decoder.decode(AuditCheck.self, from: Data(out.stdout.utf8)) {
+            auditCheck = check
+            if check.ok, let last = check.last { auditAnchor = "\(last.seq):\(last.hash)" }
+        }
+    }
+
     private func check(_ args: [String]) async throws {
         let out = try await run(args)
         if out.code != 0 { throw EngineError(out.lastLine) }
@@ -286,6 +337,8 @@ final class Engine {
             let p = Process()
             p.executableURL = cli
             p.arguments = args
+            // The audit log records settings changes as made from the app.
+            p.environment = ProcessInfo.processInfo.environment.merging(["KEEPMUM_CALLER": "Keepmum.app"]) { _, new in new }
             let out = Pipe(), err = Pipe()
             p.standardOutput = out
             p.standardError = err
@@ -321,6 +374,18 @@ final class Engine {
                                        allowStrings: ["sk_test_docs_example"], allowPatterns: ["^demo-[a-z]+$"], off: ["phone-labeled"]),
                           clients: ["codex": .init(installed: true, on: true), "pi": .init(installed: true, on: false)])
         e.serviceStatus = .enabled
+        let now = Date().timeIntervalSince1970
+        e.audit = [
+            .init(seq: 4211, ts: now - 600, event: "config", summary: "detect.observe true -> false", weakens: false, by: "keepmum observe off (from Keepmum.app)"),
+            .init(seq: 4188, ts: now - 2_400, event: "config", summary: "detect.observe false -> true", weakens: true, by: "keepmum observe on (from Keepmum.app)"),
+            .init(seq: 3906, ts: now - 9_000, event: "exclude", summary: "~/Projects/open-source-docs excluded: goes straight to the provider, unscanned", weakens: true, by: "keepmum exclude (from Keepmum.app)"),
+            .init(seq: 3874, ts: now - 26_000, event: "start", summary: "keepmum serve started (pid 812, rules + pf-serve)", weakens: false, by: nil),
+            .init(seq: 3873, ts: now - 26_100, event: "stop", summary: "keepmum serve stopped (pid 640)", weakens: false, by: nil),
+            .init(seq: 2950, ts: now - 90_000, event: "config", summary: "allowlist.strings +3f9a0c21b7e4", weakens: true, by: "keepmum rules allow (from Keepmum.app)"),
+            .init(seq: 2911, ts: now - 95_000, event: "config", summary: "rules.off +phone-labeled", weakens: true, by: "keepmum rules off (from Keepmum.app)"),
+            .init(seq: 1, ts: now - 400_000, event: "config", summary: "settings recorded; detect.pii false -> true", weakens: false, by: "keepmum serve"),
+        ]
+        e.auditCheck = .init(ok: true, entries: 4211, first: .init(seq: 1, hash: "5c0e…"), last: .init(seq: 4211, hash: "9be41f07c2d8a35e1b60f4c9d27a8e53"), problems: [])
         return e
     }
 }
