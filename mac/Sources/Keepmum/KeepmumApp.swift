@@ -119,7 +119,7 @@ enum Snapshotter {
             _ = NSApplication.shared
             for (name, px) in [("16x16", 16), ("16x16@2x", 32), ("32x32", 32), ("32x32@2x", 64), ("128x128", 128),
                                ("128x128@2x", 256), ("256x256", 256), ("256x256@2x", 512), ("512x512", 512), ("512x512@2x", 1024)] {
-                render(AppIcon().frame(width: 1024, height: 1024).scaleEffect(CGFloat(px) / 1024).frame(width: CGFloat(px), height: CGFloat(px)),
+                render(AppIcon(weight: px <= 32 ? 14 : px <= 64 ? 12 : 10).frame(width: 1024, height: 1024).scaleEffect(CGFloat(px) / 1024).frame(width: CGFloat(px), height: CGFloat(px)),
                        to: "\(args[i + 1])/icon_\(name).png", dark: false, scale: 1)
             }
             exit(0)
@@ -182,18 +182,20 @@ enum Snapshotter {
     }
 }
 
-/// The app icon: the keepmum mark (a speech bubble with a word masked) on an indigo squircle.
+/// The app icon: the keepmum mark (a sealed m) on a coral squircle.
 struct AppIcon: View {
+    /// The mark's stroke: heavier for the small sizes, so the m stays open at 16 px.
+    var weight: CGFloat = 10
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 230, style: .continuous)
-                .fill(LinearGradient(colors: [Color(nsColor: NSColor(hex: 0x5B66E0)), Color(nsColor: NSColor(hex: 0x3A44B8))],
-                                     startPoint: .top, endPoint: .bottom))
+                .fill(Brand.iconGradient)
                 .padding(100)
             RoundedRectangle(cornerRadius: 230, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 4)
                 .padding(100)
-            KeepmumMark(color: .white)
+            KeepmumMark(color: .white, weight: weight)
                 .frame(width: 600, height: 600)
                 .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
         }

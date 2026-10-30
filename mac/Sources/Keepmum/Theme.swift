@@ -223,62 +223,60 @@ enum Brand {
         let list = info.flatMap { IOPSCopyPowerSourcesList($0)?.takeRetainedValue() as? [CFTypeRef] } ?? []
         return list.isEmpty ? "macmini" : "laptopcomputer"
     }()
+
+    /// keepmum's own color, coral (#E4572E), as the icon's top-to-bottom gradient.
+    static let iconGradient = LinearGradient(colors: [Color(nsColor: NSColor(hex: 0xEC6843)), Color(nsColor: NSColor(hex: 0xD9481F))],
+                                             startPoint: .top, endPoint: .bottom)
 }
 
-/// The keepmum mark: a speech bubble whose line of text has one word turned into placeholders,
-/// cut out of the bubble. The first square is solid ("the masked value"). Drawn in a 100x100 box
-/// at any size, in one color, so it works as an app icon, a template image in the menu bar, and
-/// a small logo.
+/// The keepmum mark: a sealed m. The m of "mum" stands on a line that closes it, like a shut
+/// mouth. Drawn in a 100x100 box at any size, in one color, so it works as an app icon, a
+/// template image in the menu bar, and a small logo. `weight` is the stroke in box units: small
+/// renders (the menu bar) want it heavier.
 struct KeepmumMark: View {
     var color: Color = .white
+    var weight: CGFloat = 10
 
     var body: some View {
         GeometryReader { geo in
             let u = min(geo.size.width, geo.size.height) / 100
-            ZStack(alignment: .topLeading) {
-                Bubble().fill(color)
-                Group {
-                    Capsule().frame(width: 46 * u, height: 9 * u).offset(x: 22 * u, y: 30 * u)
-                    Capsule().frame(width: 14 * u, height: 9 * u).offset(x: 22 * u, y: 46 * u)
-                    ForEach(0..<3, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 2.6 * u, style: .continuous)
-                            .frame(width: 9 * u, height: 9 * u)
-                            .offset(x: (41 + Double(i) * 14) * u, y: 46 * u)
-                            .opacity(i == 0 ? 1 : 0.55)
-                    }
-                }
-                .blendMode(.destinationOut)
-            }
-            .compositingGroup()
-            .frame(width: 100 * u, height: 100 * u)
-            .frame(width: geo.size.width, height: geo.size.height)
+            SealedM()
+                .stroke(color, style: StrokeStyle(lineWidth: weight * u, lineCap: .round, lineJoin: .round))
+                .frame(width: 100 * u, height: 100 * u)
+                .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 
-    /// The bubble: a rounded body and a curved tail at the bottom left, as one outline.
-    private struct Bubble: Shape {
+    /// Two arches on three legs, and the line under them, as one stroked path.
+    struct SealedM: Shape {
         func path(in r: CGRect) -> Path {
             let u = min(r.width, r.height) / 100
-            let body = Path(roundedRect: CGRect(x: 8 * u, y: 14 * u, width: 84 * u, height: 60 * u), cornerRadius: 22 * u, style: .continuous)
-            var tail = Path()
-            tail.move(to: CGPoint(x: 22 * u, y: 60 * u))
-            tail.addLine(to: CGPoint(x: 40 * u, y: 70 * u))
-            tail.addQuadCurve(to: CGPoint(x: 17 * u, y: 88 * u), control: CGPoint(x: 30 * u, y: 84 * u))
-            tail.addQuadCurve(to: CGPoint(x: 22 * u, y: 60 * u), control: CGPoint(x: 24 * u, y: 76 * u))
-            return body.union(tail)
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * u, y: r.minY + y * u) }
+            var path = Path()
+            for (left, right) in [(21.6, 50.0), (50.0, 78.4)] {
+                let mid = (left + right) / 2
+                path.move(to: p(left, 69.8))
+                path.addLine(to: p(left, 46.3))
+                path.addCurve(to: p(mid, 30.9), control1: p(left, 37), control2: p(left + 6.2, 30.9))
+                path.addCurve(to: p(right, 46.3), control1: p(right - 6.2, 30.9), control2: p(right, 37))
+                path.addLine(to: p(right, 69.8))
+            }
+            path.move(to: p(12.9, 69.8))
+            path.addLine(to: p(87.1, 69.8))
+            return path
         }
     }
 }
 
-/// The mark on the accent squircle: the app icon's look, at small sizes.
+/// The mark on the brand squircle: the app icon's look, at small sizes. The icon is coral; the
+/// app's UI accent stays indigo, so coral never reads as the red of "blocked".
 struct KeepmumBadge: View {
     var size: CGFloat
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-            .fill(LinearGradient(colors: [Color(nsColor: NSColor(hex: 0x5B66E0)), Color(nsColor: NSColor(hex: 0x3F49C2))],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(KeepmumMark(color: .white).padding(size * 0.15))
+            .fill(Brand.iconGradient)
+            .overlay(KeepmumMark(color: .white, weight: size < 32 ? 12 : 10).padding(size * 0.15))
             .frame(width: size, height: size)
     }
 }
@@ -290,7 +288,7 @@ extension Brand {
     @MainActor static let menuBarIdle = renderMenuBarImage(dimmed: true)
 
     @MainActor private static func renderMenuBarImage(dimmed: Bool) -> NSImage {
-        let renderer = ImageRenderer(content: KeepmumMark(color: .black.opacity(dimmed ? 0.45 : 1)).frame(width: 18, height: 18))
+        let renderer = ImageRenderer(content: KeepmumMark(color: .black.opacity(dimmed ? 0.45 : 1), weight: 13).frame(width: 18, height: 18))
         renderer.scale = 2
         let image = renderer.nsImage ?? NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil)!
         image.size = NSSize(width: 18, height: 18)

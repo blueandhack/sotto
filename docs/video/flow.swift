@@ -127,34 +127,28 @@ struct Frame {
         }())
     }
 
-    /// The app's mark (KeepmumMark in the app): a speech bubble with one word turned into
-    /// placeholders, cut out of it, on the indigo squircle.
+    /// The app's mark (KeepmumMark in the app): a sealed m, the m of "mum" standing on a line
+    /// that closes it, on the coral squircle.
     func badge(_ size: CGFloat) -> AnyView {
         AnyView({
         let u = size * 0.7 / 100
-        let bubble = Path { p in
-            p.addPath(Path(roundedRect: CGRect(x: 8 * u, y: 14 * u, width: 84 * u, height: 60 * u), cornerRadius: 22 * u, style: .continuous)
-                .union(Path { t in
-                    t.move(to: CGPoint(x: 22 * u, y: 60 * u)); t.addLine(to: CGPoint(x: 40 * u, y: 70 * u))
-                    t.addQuadCurve(to: CGPoint(x: 17 * u, y: 88 * u), control: CGPoint(x: 30 * u, y: 84 * u))
-                    t.addQuadCurve(to: CGPoint(x: 22 * u, y: 60 * u), control: CGPoint(x: 24 * u, y: 76 * u))
-                }))
-        }
-        let mark = ZStack(alignment: .topLeading) {
-            bubble.fill(.white)
-            Group {
-                Capsule().frame(width: 46 * u, height: 9 * u).offset(x: 22 * u, y: 30 * u)
-                Capsule().frame(width: 14 * u, height: 9 * u).offset(x: 22 * u, y: 46 * u)
-                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 41 * u, y: 46 * u)
-                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 55 * u, y: 46 * u).opacity(0.55)
-                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 69 * u, y: 46 * u).opacity(0.55)
+        let m = Path { path in
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * u, y: y * u) }
+            for (left, right) in [(21.6, 50.0), (50.0, 78.4)] {
+                let mid = (left + right) / 2
+                path.move(to: p(left, 69.8))
+                path.addLine(to: p(left, 46.3))
+                path.addCurve(to: p(mid, 30.9), control1: p(left, 37), control2: p(left + 6.2, 30.9))
+                path.addCurve(to: p(right, 46.3), control1: p(right - 6.2, 30.9), control2: p(right, 37))
+                path.addLine(to: p(right, 69.8))
             }
-            .blendMode(.destinationOut)
+            path.move(to: p(12.9, 69.8))
+            path.addLine(to: p(87.1, 69.8))
         }
-        .compositingGroup()
-        .frame(width: 100 * u, height: 100 * u, alignment: .topLeading)
+        let mark = m.stroke(.white, style: StrokeStyle(lineWidth: 10 * u, lineCap: .round, lineJoin: .round))
+            .frame(width: 100 * u, height: 100 * u, alignment: .topLeading)
         return RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-            .fill(LinearGradient(colors: [Color(hex: 0x5B66E0), Color(hex: 0x3F49C2)], startPoint: .top, endPoint: .bottom))
+            .fill(LinearGradient(colors: [Color(hex: 0xEC6843), Color(hex: 0xD9481F)], startPoint: .top, endPoint: .bottom))
             .overlay(mark)
             .frame(width: size, height: size)
         }())

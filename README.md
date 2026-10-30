@@ -1,4 +1,4 @@
-<p align="center"><img src="mac/docs/logo.png" width="112" alt="keepmum logo: a speech bubble where one word became placeholders"></p>
+<p align="center"><img src="mac/docs/logo.png" width="112" alt="keepmum logo: a lowercase m closed off by a line, like a shut mouth"></p>
 
 <h1 align="center">keepmum</h1>
 

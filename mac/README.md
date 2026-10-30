@@ -1,8 +1,8 @@
-<p align="center"><img src="docs/logo.png" width="128" alt="keepmum logo: a speech bubble where one word became placeholders"></p>
+<p align="center"><img src="docs/logo.png" width="128" alt="keepmum logo: a lowercase m closed off by a line, like a shut mouth"></p>
 
 # keepmum for Mac
 
-A menu-bar app that sets keepmum up, runs it in the background and shows what it does, in light and dark mode. The logo is a speech bubble where one word became placeholders: what keepmum does to every request, keeping mum about the secret.
+A menu-bar app that sets keepmum up, runs it in the background and shows what it does, in light and dark mode. The logo is a sealed m: the m of "mum" standing on a line that closes it, like a shut mouth. keepmum keeps mum about your secrets.
 
 - **Overview:** key numbers and the live flow: two flow diagrams on shared columns, requests going out (client → keepmum's scan → clean, masked, observed or blocked → provider) and replies coming back (provider → keepmum's restore → client). Band width is the number of requests over the last hour, 24 hours or 7 days, and each live request travels its route as a dot. Each coding agent (Claude Code, Codex, pi) gets its own band, told apart by its User-Agent or the header `keepmum protect` adds. Hovering a band highlights it; hovering an agent or provider highlights its whole route in both diagrams.
 - **Activity:** every request, newest first, kept across restarts in `~/.config/keepmum/history.jsonl`: outcome (masked, clean, blocked, observed), what was masked and restored, and scan time, filterable by outcome, with older pages on demand; plus a per-minute chart.
