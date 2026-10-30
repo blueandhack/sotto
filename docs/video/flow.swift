@@ -1,6 +1,6 @@
-// The flow video: how sotto detects, masks and restores, as an H.264 MP4.
+// The flow video: how keepmum detects, masks and restores, as an H.264 MP4.
 //
-//     swift docs/video/flow.swift docs/video/sotto-flow.mp4
+//     swift docs/video/flow.swift docs/video/keepmum-flow.mp4
 //
 // Every frame is drawn with SwiftUI (ImageRenderer) and encoded with AVFoundation, so it needs
 // nothing beyond macOS and Xcode's command line tools. Every value shown is synthetic.
@@ -54,9 +54,9 @@ struct Value {
 }
 
 let values = [
-    Value(real: "ghp_R7kq2V9mX4pL8tY3wB6cF1hJ5dG0sAe7QwZn", placeholder: "SOTTO_SECRET_7f3a9c2e", tag: "SECRET · github-token"),
-    Value(real: "Zx81!kq_pLm", placeholder: "SOTTO_SECRET_1b9d04aa", tag: "SECRET · connection-string-password"),
-    Value(real: "jane.roe@fastmail.com", placeholder: "SOTTO_EMAIL_c41e8f07", tag: "EMAIL · email"),
+    Value(real: "ghp_R7kq2V9mX4pL8tY3wB6cF1hJ5dG0sAe7QwZn", placeholder: "KEEPMUM_SECRET_7f3a9c2e", tag: "SECRET · github-token"),
+    Value(real: "Zx81!kq_pLm", placeholder: "KEEPMUM_SECRET_1b9d04aa", tag: "SECRET · connection-string-password"),
+    Value(real: "jane.roe@fastmail.com", placeholder: "KEEPMUM_EMAIL_c41e8f07", tag: "EMAIL · email"),
 ]
 
 enum Piece {
@@ -105,7 +105,7 @@ struct Frame {
         AnyView({
         VStack(spacing: 22) {
             badge(96)
-            Text("How sotto keeps secrets on your Mac").font(.system(size: 64, weight: .semibold)).foregroundStyle(C.text)
+            Text("How keepmum keeps secrets on your Mac").font(.system(size: 64, weight: .semibold)).foregroundStyle(C.text)
             Text("Detect · Mask · Send · Restore").font(.system(size: 30)).foregroundStyle(C.secondary)
         }
         .frame(width: W, height: H)
@@ -117,35 +117,45 @@ struct Frame {
         AnyView({
         VStack(spacing: 22) {
             badge(96)
-            Text("sotto").font(.system(size: 72, weight: .semibold)).foregroundStyle(C.text)
+            Text("keepmum").font(.system(size: 72, weight: .semibold)).foregroundStyle(C.text)
             Text("Secrets and personal data stay on your Mac.").font(.system(size: 36)).foregroundStyle(C.text)
             Text("Detection, masking and restoring all run locally. The provider only ever sees placeholders.")
                 .font(.system(size: 26)).foregroundStyle(C.secondary)
-            Text("github.com/blueandhack/sotto").font(.system(size: 26, design: .monospaced)).foregroundStyle(C.accent).padding(.top, 16)
+            Text("github.com/blueandhack/keepmum").font(.system(size: 26, design: .monospaced)).foregroundStyle(C.accent).padding(.top, 16)
         }
         .frame(width: W, height: H)
         }())
     }
 
-    /// The app's mark: three lines of text, the middle one ending in placeholder dots.
+    /// The app's mark (KeepmumMark in the app): a speech bubble with one word turned into
+    /// placeholders, cut out of it, on the indigo squircle.
     func badge(_ size: CGFloat) -> AnyView {
         AnyView({
-        let bar = size * 0.09
+        let u = size * 0.7 / 100
+        let bubble = Path { p in
+            p.addPath(Path(roundedRect: CGRect(x: 8 * u, y: 14 * u, width: 84 * u, height: 60 * u), cornerRadius: 22 * u, style: .continuous)
+                .union(Path { t in
+                    t.move(to: CGPoint(x: 22 * u, y: 60 * u)); t.addLine(to: CGPoint(x: 40 * u, y: 70 * u))
+                    t.addQuadCurve(to: CGPoint(x: 17 * u, y: 88 * u), control: CGPoint(x: 30 * u, y: 84 * u))
+                    t.addQuadCurve(to: CGPoint(x: 22 * u, y: 60 * u), control: CGPoint(x: 24 * u, y: 76 * u))
+                }))
+        }
+        let mark = ZStack(alignment: .topLeading) {
+            bubble.fill(.white)
+            Group {
+                Capsule().frame(width: 46 * u, height: 9 * u).offset(x: 22 * u, y: 30 * u)
+                Capsule().frame(width: 14 * u, height: 9 * u).offset(x: 22 * u, y: 46 * u)
+                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 41 * u, y: 46 * u)
+                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 55 * u, y: 46 * u).opacity(0.55)
+                RoundedRectangle(cornerRadius: 2.6 * u).frame(width: 9 * u, height: 9 * u).offset(x: 69 * u, y: 46 * u).opacity(0.55)
+            }
+            .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: 100 * u, height: 100 * u, alignment: .topLeading)
         return RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
             .fill(LinearGradient(colors: [Color(hex: 0x5B66E0), Color(hex: 0x3F49C2)], startPoint: .top, endPoint: .bottom))
-            .overlay(alignment: .leading) {
-                VStack(alignment: .leading, spacing: size * 0.11) {
-                    Capsule().fill(.white).frame(width: size * 0.42, height: bar)
-                    HStack(spacing: size * 0.06) {
-                        Capsule().fill(.white).frame(width: size * 0.22, height: bar)
-                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
-                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
-                        Circle().fill(.white.opacity(0.7)).frame(width: bar, height: bar)
-                    }
-                    Capsule().fill(.white).frame(width: size * 0.32, height: bar)
-                }
-                .padding(.leading, size * 0.2)
-            }
+            .overlay(mark)
             .frame(width: size, height: size)
         }())
     }
@@ -158,7 +168,7 @@ struct Frame {
             header
             macBoundary
             node(x: 330, title: "Your coding agent", detail: "Claude Code, Codex, pi, opencode", icon: "terminal")
-            node(x: 880, title: "sotto", detail: "a proxy on 127.0.0.1", icon: nil)
+            node(x: 880, title: "keepmum", detail: "a proxy on 127.0.0.1", icon: nil)
             node(x: 1600, title: "Model provider", detail: "Anthropic or OpenAI", icon: "cloud")
             arrows
             packet
@@ -173,7 +183,7 @@ struct Frame {
         AnyView({
         HStack(spacing: 16) {
             badge(44)
-            Text("How a request travels through sotto").font(.system(size: 28, weight: .semibold)).foregroundStyle(C.text)
+            Text("How a request travels through keepmum").font(.system(size: 28, weight: .semibold)).foregroundStyle(C.text)
             Spacer()
             ForEach(Array(["Detect", "Mask", "Send", "Restore"].enumerated()), id: \.offset) { i, name in
                 let on = stepOn(i)
@@ -211,7 +221,7 @@ struct Frame {
 
     func node(x: CGFloat, title: String, detail: String, icon: String?) -> AnyView {
         AnyView({
-        let active = title == "sotto" ? window(t, 11.6, 24.2, fade: 0.4) + window(t, 31.6, 39.4, fade: 0.4) : 0
+        let active = title == "keepmum" ? window(t, 11.6, 24.2, fade: 0.4) + window(t, 31.6, 39.4, fade: 0.4) : 0
         return HStack(spacing: 16) {
             if let icon {
                 Image(systemName: icon).font(.system(size: 30)).foregroundStyle(C.secondary).frame(width: 44)
@@ -283,10 +293,10 @@ struct Frame {
     var where_: (String, Color) {
         switch t {
         case ..<10.6: ("In your coding agent", C.real)
-        case ..<24.6: ("In sotto, on your Mac", C.text)
+        case ..<24.6: ("In keepmum, on your Mac", C.text)
         case ..<28.6: ("What the provider receives", C.accent)
         case ..<31.2: ("The provider's reply", C.accent)
-        case ..<39.6: ("In sotto, on your Mac", C.text)
+        case ..<39.6: ("In keepmum, on your Mac", C.text)
         default: ("Back in your coding agent", C.success)
         }
     }
@@ -411,7 +421,7 @@ struct Frame {
                 Image(systemName: "lock.fill").font(.system(size: 22)).foregroundStyle(C.accent)
                 Text("Vault").font(.system(size: 24, weight: .semibold)).foregroundStyle(C.text)
             }
-            Text("In sotto's memory only. Never sent, cleared when sotto exits.")
+            Text("In keepmum's memory only. Never sent, cleared when keepmum exits.")
                 .font(.system(size: 17)).foregroundStyle(C.secondary).padding(.top, 6).padding(.bottom, 26)
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(0..<values.count, id: \.self) { i in
@@ -449,13 +459,13 @@ struct Frame {
     var caption: AnyView {
         AnyView({
         let lines: [(Double, Double, String)] = [
-            (4.4, 9.8, "sotto sits between your coding agent and its model provider, on your Mac."),
+            (4.4, 9.8, "keepmum sits between your coding agent and its model provider, on your Mac."),
             (9.8, 12.2, "Your agent sends a request. It holds a token, a password and an email."),
             (12.2, 18.2, "1  Detect: 96 rules and a local model find the sensitive values."),
             (18.2, 24.2, "2  Mask: each value becomes a placeholder. The real value stays in the vault."),
             (24.2, 28.6, "3  Send: the provider sees placeholders only."),
             (28.6, 32.8, "The model answers with the placeholders, even in the commands it runs."),
-            (32.8, 39.2, "4  Restore: sotto puts the real values back, on your Mac."),
+            (32.8, 39.2, "4  Restore: keepmum puts the real values back, on your Mac."),
             (39.2, 42.6, "Your agent works with the real values. The provider never saw them."),
         ]
         return ZStack {
@@ -535,7 +545,7 @@ MainActor.assumeIsolated {
         if args.count > 2 && args[1] == "--frames" {
             try stills(URL(fileURLWithPath: args[2]), args.dropFirst(3).compactMap(Double.init))
         } else {
-            let out = URL(fileURLWithPath: args.count > 1 ? args[1] : "sotto-flow.mp4")
+            let out = URL(fileURLWithPath: args.count > 1 ? args[1] : "keepmum-flow.mp4")
             try render(to: out)
             print("wrote \(out.path)")
         }

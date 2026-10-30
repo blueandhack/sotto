@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// Three steps from a fresh install to every Claude Code session going through sotto:
+/// Three steps from a fresh install to every Claude Code session going through keepmum:
 /// download the model, start the background service, point Claude Code at it.
 struct SetupCard: View {
     var engine: Engine
 
     var body: some View {
-        Card(title: "Setup", subtitle: engine.setupDone ? "Your coding agents go through sotto" : "Three steps, once") {
+        Card(title: "Setup", subtitle: engine.setupDone ? "Your coding agents go through keepmum" : "Three steps, once") {
             if !engine.isBundled {
-                Text("This build has no bundled engine. Build the app with mac/build-app.sh, or use the sotto command line.")
+                Text("This build has no bundled engine. Build the app with mac/build-app.sh, or use the keepmum command line.")
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 0) {
@@ -31,7 +31,7 @@ struct SetupCard: View {
                         }
                     }
                     step(3, "Protect your coding agents", done: engine.anyProtected,
-                         detail: "Each one sends its requests through sotto") { EmptyView() }
+                         detail: "Each one sends its requests through keepmum") { EmptyView() }
                     VStack(spacing: 0) {
                         ClientRow(engine: engine, id: "claude", name: "Claude Code", icon: "CC",
                                   detail: "~/.claude/settings.json", note: "open sessions switch now")
@@ -58,7 +58,7 @@ struct SetupCard: View {
 
     private var serviceDetail: String {
         switch engine.serviceStatus {
-        case .requiresApproval: "Allow \"sotto\" in System Settings › Login Items"
+        case .requiresApproval: "Allow \"keepmum\" in System Settings › Login Items"
         case .enabled where !engine.serviceRunning: "Starting…"
         default: engine.serviceRunning ? "Running at login, on 127.0.0.1:\(engine.status?.port ?? 7788)" : "Runs the proxy in the background, at login"
         }
@@ -122,7 +122,7 @@ private struct ClientRow: View {
     private func subtitle(_ c: Engine.Client?, installed: Bool, on: Bool) -> String {
         if !installed { return "Not installed" }
         if let error = c?.error { return error }
-        if !on, let other = c?.other { return "Already uses \(other.text); sotto leaves it alone" }
+        if !on, let other = c?.other { return "Already uses \(other.text); keepmum leaves it alone" }
         if on, let warning = c?.warning { return warning }
         return on ? "\(detail) · \(note)" : detail
     }
@@ -185,17 +185,17 @@ struct ProtectionRow: View {
     private var title: String {
         let names = protectedNames
         if names.isEmpty { return "No coding agent is protected" }
-        if !engine.serviceRunning { return "sotto is not running" }
+        if !engine.serviceRunning { return "keepmum is not running" }
         return names.count == 1 ? "\(names[0]) is protected" : "\(names.count) agents are protected"
     }
 
     private var subtitle: String {
         let names = protectedNames
-        if !names.isEmpty && !engine.serviceRunning { return "They cannot connect until sotto restarts" }
+        if !names.isEmpty && !engine.serviceRunning { return "They cannot connect until keepmum restarts" }
         if names.count > 1 { return names.joined(separator: ", ") }
-        if names.count == 1 { return "Every session goes through sotto" }
-        if !engine.isBundled { return "Use sotto claude or sotto codex in a terminal" }
-        return engine.canScan && engine.serviceRunning ? "Only sotto claude and sotto codex are scanned" : "Finish setup to protect every session"
+        if names.count == 1 { return "Every session goes through keepmum" }
+        if !engine.isBundled { return "Use keepmum claude or keepmum codex in a terminal" }
+        return engine.canScan && engine.serviceRunning ? "Only keepmum claude and keepmum codex are scanned" : "Finish setup to protect every session"
     }
 
     private var color: Color {

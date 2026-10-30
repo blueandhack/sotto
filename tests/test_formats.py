@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "bench"))
 from negatives import HOLDOUT5_NEGATIVES  # noqa: E402

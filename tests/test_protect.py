@@ -6,9 +6,9 @@ import sys
 
 import pytest
 
-from sotto import config as config_mod
-from sotto import launch, protect
-from sotto.protect import ProtectError
+from keepmum import config as config_mod
+from keepmum import launch, protect
+from keepmum.protect import ProtectError
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_other_keys_are_kept_and_a_backup_is_made(claude_dir):
     s = settings(claude_dir)
     assert s["model"] == "opus" and s["permissions"] == original["permissions"]
     assert s["env"] == {"API_TIMEOUT_MS": "60000", "ANTHROPIC_BASE_URL": "http://127.0.0.1:7788"}
-    assert json.loads((claude_dir / "settings.json.sotto-backup").read_text()) == original
+    assert json.loads((claude_dir / "settings.json.keepmum-backup").read_text()) == original
     assert stat.S_IMODE((claude_dir / "settings.json").stat().st_mode) == 0o600
     protect.disable(7788)
     assert settings(claude_dir) == original
@@ -69,8 +69,8 @@ def test_a_broken_file_is_never_rewritten(claude_dir):
     ("http://127.0.0.1:7789", False), ("https://127.0.0.1:7788", False),
     ("http://127.0.0.1:7788/v1", False), ("http://evil.example:7788", False), ("not a url", False),
 ])
-def test_is_sotto_url(value, ours):
-    assert protect.is_sotto_url(value, 7788) == ours
+def test_is_keepmum_url(value, ours):
+    assert protect.is_keepmum_url(value, 7788) == ours
 
 
 def test_our_own_url_is_not_a_bypass(claude_dir, tmp_path):
@@ -91,10 +91,10 @@ def test_upstream_pointing_at_ourselves_is_dropped(tmp_path, monkeypatch):
     assert proxy.upstream == cfg.upstream
 
 
-def test_sotto_claude_refuses_when_protected_and_the_service_is_down(claude_dir, tmp_path, monkeypatch):
+def test_keepmum_claude_refuses_when_protected_and_the_service_is_down(claude_dir, tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
+    from keepmum.cli import app
 
     monkeypatch.setenv("HOME", str(tmp_path))
     protect.enable(7788)
@@ -103,10 +103,10 @@ def test_sotto_claude_refuses_when_protected_and_the_service_is_down(claude_dir,
     assert r.exit_code == 2 and "not running" in r.output
 
 
-def test_sotto_claude_uses_the_service_when_protected(claude_dir, tmp_path, monkeypatch):
+def test_keepmum_claude_uses_the_service_when_protected(claude_dir, tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
+    from keepmum.cli import app
 
     monkeypatch.setenv("HOME", str(tmp_path))
     protect.enable(7788)
@@ -124,13 +124,13 @@ def test_sotto_claude_uses_the_service_when_protected(claude_dir, tmp_path, monk
 
 def test_wrapper_refuses_when_protected_and_the_service_is_down(tmp_path):
     home = tmp_path / "home"
-    (home / ".config" / "sotto").mkdir(parents=True)
-    (home / ".config" / "sotto" / "config.toml").write_text("[server]\nport = 1\n")  # nothing listens on port 1
+    (home / ".config" / "keepmum").mkdir(parents=True)
+    (home / ".config" / "keepmum" / "config.toml").write_text("[server]\nport = 1\n")  # nothing listens on port 1
     (home / ".claude").mkdir()
     (home / ".claude" / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:1"}}))
     env = {k: v for k, v in os.environ.items() if k not in launch.BYPASS_KEYS and k != "CLAUDE_CONFIG_DIR"}
     env["HOME"] = str(home)
-    wrapper = os.path.join(os.path.dirname(sys.executable), "sotto-claude-wrapper")
+    wrapper = os.path.join(os.path.dirname(sys.executable), "keepmum-claude-wrapper")
     r = subprocess.run([wrapper, sys.executable, "-c", "print('started')"], env=env, cwd=home,
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 2 and "protection is on" in r.stderr and r.stdout == ""
@@ -159,7 +159,7 @@ def test_exclude_writes_the_repo_root_local_settings_and_keeps_it_out_of_git(rep
     root = protect.exclude(repo / "src" / "deep", UP)
     assert root == repo.resolve()
     assert local(repo) == {"env": {"ANTHROPIC_BASE_URL": UP}}
-    assert not (repo / ".claude" / "settings.local.json.sotto-backup").exists()
+    assert not (repo / ".claude" / "settings.local.json.keepmum-backup").exists()
     assert subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", ".claude/settings.local.json"]).returncode == 0
     status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
                             capture_output=True, text=True).stdout
@@ -223,10 +223,10 @@ def test_an_excluded_project_is_not_a_bypass_risk_but_another_value_is(repo):
     assert any("src/.claude" in r for r in launch.bypass_risks(repo / "src", 7788))
 
 
-def test_sotto_claude_refuses_in_an_excluded_project(repo, monkeypatch):
+def test_keepmum_claude_refuses_in_an_excluded_project(repo, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
+    from keepmum.cli import app
 
     protect.exclude(repo, UP)
     monkeypatch.chdir(repo)
@@ -242,9 +242,9 @@ def test_wrapper_runs_claude_directly_in_an_excluded_project(tmp_path):
     env = {k: v for k, v in os.environ.items() if k not in launch.BYPASS_KEYS and k != "CLAUDE_CONFIG_DIR"}
     env["HOME"] = str(home)
     # Exclude through the CLI, with the same HOME the wrapper sees.
-    sotto = os.path.join(os.path.dirname(sys.executable), "sotto")
-    subprocess.run([sotto, "exclude", str(proj)], env=env, check=True, capture_output=True)
-    wrapper = os.path.join(os.path.dirname(sys.executable), "sotto-claude-wrapper")
+    keepmum = os.path.join(os.path.dirname(sys.executable), "keepmum")
+    subprocess.run([keepmum, "exclude", str(proj)], env=env, check=True, capture_output=True)
+    wrapper = os.path.join(os.path.dirname(sys.executable), "keepmum-claude-wrapper")
     r = subprocess.run([wrapper, sys.executable, "-c", "import os; print(os.environ.get('ANTHROPIC_BASE_URL'))"],
                        env=env, cwd=proj, capture_output=True, text=True, timeout=60)
     assert r.returncode == 0 and r.stdout == "None\n" and r.stderr == ""  # no proxy started, nothing injected

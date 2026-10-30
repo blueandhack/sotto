@@ -44,7 +44,7 @@ _IDENTIFIER_WORD = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*")  # ops-admin, set
 _BIRTH_BEFORE = re.compile(r"(?i)(?<![a-z])(?:born|birth|birthday|dob|d\.o\.b)(?![a-z])")  # matches date_of_birth too
 _PII_EDGE = "/\\:;,.'\"`()[]{}<>|="
 
-log = logging.getLogger("sotto")
+log = logging.getLogger("keepmum")
 
 
 class Pipeline:
@@ -284,12 +284,12 @@ def load_model():
     """pf-serve with the pinned model, started. Fails loudly, never silently weaker."""
     from .pfserve import PfServe, PfServeError, find_binary, find_model
 
-    off = "or run with the rules only: `sotto model off`"
+    off = "or run with the rules only: `keepmum model off`"
     binary, model = find_binary(), find_model()
     if binary is None:
         raise ModelUnavailable(f"pf-serve is not installed: build it with native/pf-serve/build.sh, {off}.")
     if model is None:
-        raise ModelUnavailable(f"the Privacy Filter model is not downloaded: run `sotto setup`, {off}.")
+        raise ModelUnavailable(f"the Privacy Filter model is not downloaded: run `keepmum setup`, {off}.")
     try:
         return PfServe(binary, model)
     except (PfServeError, OSError) as e:
@@ -318,7 +318,7 @@ class ModelSwitch:
     def want(self, on: bool) -> None:
         self.wanted = on
         if on != (self.pipeline.pf is not None) or (not on and self.pipeline.model_error):
-            self.thread = threading.Thread(target=self._apply, name="sotto-model", daemon=True)
+            self.thread = threading.Thread(target=self._apply, name="keepmum-model", daemon=True)
             self.thread.start()
 
     def _apply(self) -> None:

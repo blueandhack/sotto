@@ -1,4 +1,4 @@
-"""Run the proxy in the background and Claude Code in front of it (`sotto claude`)."""
+"""Run the proxy in the background and Claude Code in front of it (`keepmum claude`)."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ from pathlib import Path
 from .config import Config
 from .proxy import Proxy
 
-RUNTIME_FILE = Path.home() / ".config" / "sotto" / "runtime.json"
-LOG_FILE = Path.home() / ".config" / "sotto" / "sotto.log"
+RUNTIME_FILE = Path.home() / ".config" / "keepmum" / "runtime.json"
+LOG_FILE = Path.home() / ".config" / "keepmum" / "keepmum.log"
 
-# Settings or environment that would send Claude Code's traffic somewhere other than sotto.
+# Settings or environment that would send Claude Code's traffic somewhere other than keepmum.
 BYPASS_KEYS = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
                "ANTHROPIC_BEDROCK_BASE_URL", "ANTHROPIC_VERTEX_BASE_URL")
 
@@ -34,11 +34,11 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
 
     from . import __version__
 
-    from .protect import is_sotto_url
+    from .protect import is_keepmum_url
 
     pii = cfg.pii if pii is None else pii
-    if upstream and is_sotto_url(upstream, cfg.port):
-        upstream = None  # protection points Claude Code at sotto: never forward to ourselves
+    if upstream and is_keepmum_url(upstream, cfg.port):
+        upstream = None  # protection points Claude Code at keepmum: never forward to ourselves
     from .detect.pipeline import ModelSwitch
 
     # `rules_only` (--rules-only) holds for this run; otherwise detect.model decides, and can change.
@@ -54,7 +54,7 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
             switch.want(new.model)
 
     observe = LiveConfig(cfg.path, cfg, on_change=apply)
-    history = History(Path.home() / ".config" / "sotto" / "history.jsonl")
+    history = History(Path.home() / ".config" / "keepmum" / "history.jsonl")
     proxy = Proxy(Redactor(pipeline, Vault()), upstream=upstream or cfg.upstream, policy=cfg.restore,
                   stats=Stats(history=history), stats_token=stats_token(), info=info, observe=observe,
                   previews=lambda: observe.config.log_previews)
@@ -63,9 +63,9 @@ def build_proxy(cfg: Config, pii: bool | None = None, rules_only: bool = False, 
 
 
 def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:
-    """Places that could route Claude Code around sotto. Any hit means: do not start.
-    An ANTHROPIC_BASE_URL pointing at sotto itself on `port` (`sotto protect`) is not a risk."""
-    from .protect import is_excluded, is_sotto_url, settings_path
+    """Places that could route Claude Code around keepmum. Any hit means: do not start.
+    An ANTHROPIC_BASE_URL pointing at keepmum itself on `port` (`keepmum protect`) is not a risk."""
+    from .protect import is_excluded, is_keepmum_url, settings_path
 
     risks = [f"environment variable {k} is set" for k in BYPASS_KEYS[1:] if os.environ.get(k)]
     excluded = is_excluded(cwd)  # reported by the callers as an exclusion, not a risk
@@ -82,7 +82,7 @@ def bypass_risks(cwd: Path, port: int | None = None) -> list[str]:
         if not isinstance(env, dict):
             continue
         for k in BYPASS_KEYS:
-            ours = k == "ANTHROPIC_BASE_URL" and port is not None and is_sotto_url(str(env.get(k)), port)
+            ours = k == "ANTHROPIC_BASE_URL" and port is not None and is_keepmum_url(str(env.get(k)), port)
             ours = ours or (k == "ANTHROPIC_BASE_URL" and excluded is not None and f.name == "settings.local.json"
                             and env.get(k) == excluded)
             if k in env and not ours:
@@ -137,7 +137,7 @@ class BackgroundServer:
 
 
 def log_to_file(level: str) -> None:
-    """In `sotto claude` the terminal belongs to Claude Code; sotto logs to a private file."""
+    """In `keepmum claude` the terminal belongs to Claude Code; keepmum logs to a private file."""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not LOG_FILE.exists():
         os.close(os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT, 0o600))
@@ -169,7 +169,7 @@ def run_through(proxy: Proxy, command: list[str]) -> int:
 
 def _run_child(command: list[str], env: dict[str, str]) -> int:
     """Run Claude with stdio inherited. Ctrl-C reaches it directly (same process group);
-    a TERM or HUP sent to sotto (an editor stopping the session) is passed on to it."""
+    a TERM or HUP sent to keepmum (an editor stopping the session) is passed on to it."""
     child = subprocess.Popen(command, env=env)
 
     def forward(signum, _frame):
@@ -185,12 +185,12 @@ def _run_child(command: list[str], env: dict[str, str]) -> int:
             signal.signal(sig, handler)
 
 
-PROTECTED_BUT_DOWN = ("protection is on, so Claude Code goes to the sotto service, but it is not running: "
-                      "open Sotto.app or run `sotto serve` (or `sotto protect off`)")
+PROTECTED_BUT_DOWN = ("protection is on, so Claude Code goes to the keepmum service, but it is not running: "
+                      "open Keepmum.app or run `keepmum serve` (or `keepmum protect off`)")
 
 
 def protected(cfg: Config) -> bool:
-    """`sotto protect` is on: Claude Code's settings send every session to `sotto serve`."""
+    """`keepmum protect` is on: Claude Code's settings send every session to `keepmum serve`."""
     from .protect import ProtectError, status
 
     try:
@@ -200,7 +200,7 @@ def protected(cfg: Config) -> bool:
 
 
 def shared_serve_port(cfg: Config, need: str = "messages") -> int | None:
-    """The port of a running `sotto serve`, if there is one. It must answer the stats endpoint
+    """The port of a running `keepmum serve`, if there is one. It must answer the stats endpoint
     with this user's private token and say it is in serve mode: something else listening on
     the port gets nothing."""
     import httpx
@@ -209,7 +209,7 @@ def shared_serve_port(cfg: Config, need: str = "messages") -> int | None:
 
     try:
         token = TOKEN_FILE.read_text().strip()
-        r = httpx.get(f"http://127.0.0.1:{cfg.port}/_sotto/stats", headers={"authorization": f"Bearer {token}"}, timeout=1.5)
+        r = httpx.get(f"http://127.0.0.1:{cfg.port}/_keepmum/stats", headers={"authorization": f"Bearer {token}"}, timeout=1.5)
         info = r.json() if r.status_code == 200 else {}
         # A service started before Responses API support only scans the Messages API.
         return cfg.port if info.get("mode") == "serve" and need in info.get("apis", ["messages"]) else None
@@ -218,10 +218,10 @@ def shared_serve_port(cfg: Config, need: str = "messages") -> int | None:
 
 
 def wrap_main() -> int:
-    """`sotto-claude-wrapper <claude binary> [args...]`: for editors that launch Claude Code
+    """`keepmum-claude-wrapper <claude binary> [args...]`: for editors that launch Claude Code
     through a wrapper (VS Code's claudeCode.claudeProcessWrapper setting).
 
-    Uses a running `sotto serve` when there is one, so every conversation shares one model;
+    Uses a running `keepmum serve` when there is one, so every conversation shares one model;
     otherwise starts a proxy for this conversation. Never writes to stdout: the editor talks
     to Claude over it. Refusals go to stderr, and Claude is not started.
     """
@@ -231,11 +231,14 @@ def wrap_main() -> int:
     from .detect.pipeline import ModelUnavailable
 
     def refuse(message: str) -> int:
-        print(f"sotto: {message}", file=sys.stderr)
+        print(f"keepmum: {message}", file=sys.stderr)
         return 2
 
     if len(sys.argv) < 2:
-        return refuse("usage: sotto-claude-wrapper <claude binary> [args...]")
+        return refuse("usage: keepmum-claude-wrapper <claude binary> [args...]")
+    from . import legacy
+
+    legacy.migrate_quietly()
     command = sys.argv[1:]
     try:
         cfg = load()
@@ -250,8 +253,8 @@ def wrap_main() -> int:
     from .protect import is_excluded
 
     if is_excluded(Path.cwd()):
-        # `sotto exclude` sends Claude Code in this project straight to the API: run it as is.
-        logging.getLogger("sotto").info("wrapper: project excluded, running Claude Code without sotto")
+        # `keepmum exclude` sends Claude Code in this project straight to the API: run it as is.
+        logging.getLogger("keepmum").info("wrapper: project excluded, running Claude Code without keepmum")
         try:
             return _run_child(command, dict(os.environ))
         except OSError as e:
@@ -261,7 +264,7 @@ def wrap_main() -> int:
         return refuse(PROTECTED_BUT_DOWN)
     try:
         if port is not None:
-            logging.getLogger("sotto").info("wrapper: using sotto serve on port %d", port)
+            logging.getLogger("keepmum").info("wrapper: using keepmum serve on port %d", port)
             return _run_child(command, {**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}"})
         try:
             proxy = build_proxy(cfg, upstream=os.environ.get("ANTHROPIC_BASE_URL"), mode="vscode")

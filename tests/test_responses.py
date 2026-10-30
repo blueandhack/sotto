@@ -13,13 +13,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from sotto import selftest
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.proxy import Proxy
-from sotto.redact import RESPONSES_HINT, Redactor
-from sotto.responses import ResponsesStreamRestorer, restore_responses
-from sotto.vault import PLACEHOLDER, Vault
+from keepmum import selftest
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.proxy import Proxy
+from keepmum.redact import RESPONSES_HINT, Redactor
+from keepmum.responses import ResponsesStreamRestorer, restore_responses
+from keepmum.vault import PLACEHOLDER, Vault
 
 SALT = bytes(range(32))
 
@@ -157,18 +157,18 @@ def test_codex_round_trip_with_zstd_never_sends_the_value():
     async def go():
         _, client = make(mock)
         raw = zstandard.ZstdCompressor().compress(json.dumps(codex_body(canary)).encode())
-        headers = {"content-encoding": "zstd", "content-type": "application/json", "x-sotto-client": "codex",
+        headers = {"content-encoding": "zstd", "content-type": "application/json", "x-keepmum-client": "codex",
                    "user-agent": "codex_exec/0.147.0"}
         r = await client.post("/chatgpt/backend-api/codex/responses", content=raw, headers=headers)
         models = await client.get("/chatgpt/backend-api/codex/models?client_version=1")
-        stats = (await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})).json()
+        stats = (await client.get("/_keepmum/stats", headers={"authorization": "Bearer t"})).json()
         return r, models, stats
 
     r, models, stats = anyio.run(go)
-    assert r.status_code == 200 and canary in r.text and "SOTTO_" not in r.text
+    assert r.status_code == 200 and canary in r.text and "KEEPMUM_" not in r.text
     assert not any(canary.encode() in b for b in mock.received)
     assert mock.paths[0] == "/backend-api/codex/responses" and models.status_code == 200
-    assert "x-sotto-client" not in mock.headers[0]
+    assert "x-keepmum-client" not in mock.headers[0]
     assert mock.headers[0]["content-encoding"] == "zstd"  # chatgpt.com refuses large uncompressed bodies
     event = stats["recent"][0]
     assert event["client"] == "codex" and event["provider"] == "openai" and event["redacted"].get("SECRET")
@@ -181,11 +181,11 @@ def test_opencode_chatgpt_login_on_the_openai_route_goes_to_chatgpt():
 
     async def go():
         _, client = make(mock)
-        headers = {"chatgpt-account-id": "acct", "x-sotto-client": "opencode", "authorization": "Bearer jwt"}
+        headers = {"chatgpt-account-id": "acct", "x-keepmum-client": "opencode", "authorization": "Bearer jwt"}
         chatgpt = await client.post("/openai/v1/responses", json=codex_body(canary), headers=headers)
         apikey = await client.post("/openai/v1/responses", json={**codex_body(canary), "stream": False},
-                                   headers={"x-sotto-client": "opencode"})
-        stats = (await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})).json()
+                                   headers={"x-keepmum-client": "opencode"})
+        stats = (await client.get("/_keepmum/stats", headers={"authorization": "Bearer t"})).json()
         return chatgpt, apikey, stats
 
     chatgpt, apikey, stats = anyio.run(go)

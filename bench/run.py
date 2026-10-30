@@ -20,8 +20,8 @@ from datetime import datetime
 from importlib import metadata
 from pathlib import Path
 
-from sotto.detect import TYPES
-from sotto.detect.pipeline import Pipeline
+from keepmum.detect import TYPES
+from keepmum.detect.pipeline import Pipeline
 
 DEFAULT_DETECTORS = "rules,rules+pf-serve,rules+pf-serve:pii"
 
@@ -76,8 +76,8 @@ def make_detector(spec: str):
     name, _, flags = spec.partition(":")
     parts = name.split("+")
     if len(parts) == 1:
-        if name == "rules":  # the pipeline without a model, as sotto runs with detect.model = false
-            from sotto.detect.rules import RulesDetector
+        if name == "rules":  # the pipeline without a model, as keepmum runs with detect.model = false
+            from keepmum.detect.rules import RulesDetector
 
             return CandidatePipeline(RulesDetector(), None, pii="pii" in flags.split(":"))
         if name == "pf-nemotron":
@@ -85,11 +85,11 @@ def make_detector(spec: str):
 
             return PrivacyFilter("mlx", model="OpenMed/privacy-filter-nemotron", name="pf-nemotron")
         if name == "pf-serve":
-            from sotto.detect.pfserve import PfServe, find_binary, find_model
+            from keepmum.detect.pfserve import PfServe, find_binary, find_model
 
             binary, model = find_binary(), find_model()
             if not (binary and model):
-                raise RuntimeError("pf-serve or its model is missing: run native/pf-serve/build.sh and `sotto setup`")
+                raise RuntimeError("pf-serve or its model is missing: run native/pf-serve/build.sh and `keepmum setup`")
             return PfServe(binary, model)
         if name.startswith("pf"):
             from pf_mlx import PrivacyFilter
@@ -105,7 +105,7 @@ def make_detector(spec: str):
 
             return AFMExtractor(name.removeprefix("afm-"))
         raise ValueError(f"unknown detector {spec!r}")
-    from sotto.detect.rules import RulesDetector
+    from keepmum.detect.rules import RulesDetector
 
     rules = pf = pii_detector = None
     extra = []
@@ -448,7 +448,7 @@ def _ms(x):
 def render_markdown(s: dict) -> str:
     env, ds = s["environment"], s["dataset"]
     ok = {k: v for k, v in s["detectors"].items() if "error" not in v}
-    L = [f"# sotto Phase 0 benchmark — {s['created']}", ""]
+    L = [f"# keepmum Phase 0 benchmark — {s['created']}", ""]
     L.append(f"Machine: {env['chip']}, {env['memory_gb']} GB, macOS {env['macos']}, Python {env['python']}. "
              + ", ".join(f"{k} {v}" for k, v in env["packages"].items()) + ".")
     L.append("")

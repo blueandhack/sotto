@@ -1,11 +1,11 @@
 """Placeholders and the in-memory vault that maps them back to real values.
 
-A placeholder is `SOTTO_<TYPE>_<id>`, where id is the first 8 hex digits of
+A placeholder is `KEEPMUM_<TYPE>_<id>`, where id is the first 8 hex digits of
 HMAC-SHA256(install salt, type + NUL + value), extended to 12 on a collision. The same value
 always gets the same placeholder, which keeps Anthropic's prompt cache valid across turns.
 
 The salt is secret: with it, anyone holding a placeholder could test guesses of a weak
-password offline. It lives in ~/.config/sotto/salt (mode 0600), shared by every sotto process.
+password offline. It lives in ~/.config/keepmum/salt (mode 0600), shared by every keepmum process.
 The vault lives in process memory only: never logged, never written to disk.
 """
 
@@ -20,14 +20,14 @@ from pathlib import Path
 
 from .detect import TYPES
 
-KEYCHAIN_SERVICE = "sotto"
+KEYCHAIN_SERVICE = "sotto"  # where versions named sotto, before the salt file, kept it
 KEYCHAIN_ACCOUNT = "install-salt"
-SALT_FILE = Path.home() / ".config" / "sotto" / "salt"
+SALT_FILE = Path.home() / ".config" / "keepmum" / "salt"
 
 # Known values shorter than this are not re-masked by exact match: too likely to occur by chance.
 MIN_KNOWN = 4
 
-PLACEHOLDER = re.compile(r"SOTTO_(" + "|".join(TYPES) + r")_([0-9a-f]{8}(?:[0-9a-f]{4})?)")
+PLACEHOLDER = re.compile(r"KEEPMUM_(" + "|".join(TYPES) + r")_([0-9a-f]{8}(?:[0-9a-f]{4})?)")
 
 
 def _salt_from_file(path: Path, initial: bytes | None = None) -> bytes:
@@ -37,7 +37,7 @@ def _salt_from_file(path: Path, initial: bytes | None = None) -> bytes:
     salt = initial or secrets.token_bytes(32)
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError:  # another sotto created it first: use theirs
+    except FileExistsError:  # another keepmum created it first: use theirs
         return bytes.fromhex(path.read_text().strip())
     with os.fdopen(fd, "w") as f:
         f.write(salt.hex())
@@ -48,7 +48,7 @@ def _keychain_usable() -> bool:
     """Whether the login Keychain may be used, without ever showing a Keychain dialog.
 
     The Keychain belongs to the real user; with HOME pointed elsewhere (tests, sandboxes)
-    macOS cannot find it and would offer to "reset to defaults". sotto never lets the
+    macOS cannot find it and would offer to "reset to defaults". keepmum never lets the
     Security framework prompt: if the Keychain cannot be used silently, it uses the file.
     """
     import ctypes
@@ -67,12 +67,12 @@ def _keychain_usable() -> bool:
 
 
 def install_salt() -> bytes:
-    """The per-install HMAC key, in ~/.config/sotto/salt (0600), shared by every sotto on this Mac.
+    """The per-install HMAC key, in ~/.config/keepmum/salt (0600), shared by every keepmum on this Mac.
 
-    Every process must use the same salt: a placeholder made by one (the app's service, `sotto
+    Every process must use the same salt: a placeholder made by one (the app's service, `keepmum
     claude`, the VS Code wrapper) is only restored by a process that derives the same one. The
     Keychain cannot be shared silently, since an item is readable without a prompt only by the
-    program that created it, and each install of sotto is a different program. A salt that
+    program that created it, and each install of keepmum is a different program. A salt that
     earlier versions kept only in the Keychain is copied to the file once, when readable.
     """
     if SALT_FILE.exists():
@@ -110,9 +110,9 @@ class Vault:
         if key in self._placeholders:
             return self._placeholders[key]
         digest = hmac.new(self._salt, f"{kind}\0{value}".encode(), hashlib.sha256).hexdigest()
-        ph = f"SOTTO_{kind}_{digest[:8]}"
+        ph = f"KEEPMUM_{kind}_{digest[:8]}"
         if self._values.get(ph, value) != value:  # collision with a different value
-            ph = f"SOTTO_{kind}_{digest[:12]}"
+            ph = f"KEEPMUM_{kind}_{digest[:12]}"
         self._values[ph] = value
         self._placeholders[key] = ph
         self._kinds.setdefault(value, kind)

@@ -1,6 +1,6 @@
 """L2: OpenAI Privacy Filter through pf-serve, privacy-filter.cpp (ggml) in a process of its own.
 
-pf-serve runs on Metal on a Mac and on Vulkan or the CPU elsewhere, so sotto needs no Python ML
+pf-serve runs on Metal on a Mac and on Vulkan or the CPU elsewhere, so keepmum needs no Python ML
 packages. Protocol (little-endian), after one JSON hello line on stdout:
 
     request: u32 n, then n times: u32 len, len bytes of UTF-8
@@ -8,7 +8,7 @@ packages. Protocol (little-endian), after one JSON hello line on stdout:
              f32 score, u8 len, the label; or u32 1, u32 len, an error message
 
 pf-serve and its protocol come from magpie (MIT): https://github.com/yetone/magpie. Build it with
-native/pf-serve/build.sh; `sotto setup` downloads the model.
+native/pf-serve/build.sh; `keepmum setup` downloads the model.
 """
 
 from __future__ import annotations
@@ -58,12 +58,12 @@ class PfServeError(RuntimeError):
 
 
 def data_dir() -> Path:
-    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "sotto"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "keepmum"
 
 
 def find_binary() -> Path | None:
-    """$SOTTO_PF_SERVE, else where build.sh installs it."""
-    for p in (os.environ.get("SOTTO_PF_SERVE"), data_dir() / "bin" / "pf-serve"):
+    """$KEEPMUM_PF_SERVE, else where build.sh installs it."""
+    for p in (os.environ.get("KEEPMUM_PF_SERVE"), data_dir() / "bin" / "pf-serve"):
         if p and os.access(p, os.X_OK):
             return Path(p)
     return None
@@ -76,8 +76,8 @@ def model_candidates() -> list[Path]:
 
 
 def find_model() -> Path | None:
-    """$SOTTO_PF_MODEL, else the pinned file where `sotto setup` or the Hugging Face CLI put it."""
-    if env := os.environ.get("SOTTO_PF_MODEL"):
+    """$KEEPMUM_PF_MODEL, else the pinned file where `keepmum setup` or the Hugging Face CLI put it."""
+    if env := os.environ.get("KEEPMUM_PF_MODEL"):
         return Path(env) if Path(env).is_file() else None
     for p in model_candidates():
         if p.is_file() and p.stat().st_size == MODEL_SIZE:

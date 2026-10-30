@@ -1,6 +1,6 @@
 # Security policy
 
-sotto exists to keep secrets from leaving your Mac, so a leak is the most serious kind of bug it can have.
+keepmum exists to keep secrets from leaving your Mac, so a leak is the most serious kind of bug it can have.
 
 ## Reporting a vulnerability
 
@@ -9,12 +9,12 @@ Please report privately through GitHub: **Security → Report a vulnerability** 
 Useful reports include:
 
 - A request shape that reaches the upstream with a real value in it (a leak).
-- A way to make sotto forward a request it should have blocked (fail-open).
-- A way to make sotto write a value to disk, a log, the history file, or the stats feeds.
-- A way to get a request out unscanned through a route sotto should block: an unscanned endpoint, an encoding it cannot read, a WebSocket.
+- A way to make keepmum forward a request it should have blocked (fail-open).
+- A way to make keepmum write a value to disk, a log, the history file, or the stats feeds.
+- A way to get a request out unscanned through a route keepmum should block: an unscanned endpoint, an encoding it cannot read, a WebSocket.
 - A way for a model reply to send a restored value to a network tool.
 
-Please use synthetic secrets in your report, never real ones. A minimal payload plus the `sotto` version and `sotto doctor` output is ideal.
+Please use synthetic secrets in your report, never real ones. A minimal payload plus the `keepmum` version and `keepmum doctor` output is ideal.
 
 ## What is out of scope
 
@@ -27,4 +27,4 @@ These are known limits, documented in the README:
 
 ## Supported versions
 
-sotto is pre-release. Only the latest commit on `main` gets fixes.
+keepmum is pre-release. Only the latest commit on `main` gets fixes.

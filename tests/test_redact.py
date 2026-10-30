@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from sotto.cli import app
-from sotto.detect import Span
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.redact import Redactor
-from sotto.restore import restore_text
-from sotto.vault import PLACEHOLDER, Vault, _salt_from_file
+from keepmum.cli import app
+from keepmum.detect import Span
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.redact import Redactor
+from keepmum.restore import restore_text
+from keepmum.vault import PLACEHOLDER, Vault, _salt_from_file
 
 ROOT = Path(__file__).resolve().parents[1]
 SALT = bytes(range(32))  # fixed test salt; real installs use the Keychain
@@ -55,7 +55,7 @@ def test_every_dataset_record_round_trips_with_rules(dataset):
 
 
 def test_every_dataset_record_round_trips_with_the_model(dataset):
-    from sotto.detect.pipeline import ModelUnavailable, default_pipeline
+    from keepmum.detect.pipeline import ModelUnavailable, default_pipeline
 
     try:
         pipeline = default_pipeline(pii=True)
@@ -68,7 +68,7 @@ def test_every_dataset_record_round_trips_with_the_model(dataset):
 
 def test_round_trip_property():
     rng = random.Random(0)
-    alphabet = "abcdef0123456789 _-=:\"'\n\t/@.ÄéЖ漢🙂SOTTO_SECRET_"
+    alphabet = "abcdef0123456789 _-=:\"'\n\t/@.ÄéЖ漢🙂KEEPMUM_SECRET_"
     for _ in range(2000):
         text = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 80)))
 
@@ -105,7 +105,7 @@ def test_collision_extends_the_id():
 
     v = Vault(SALT)
     # Pretend another value already owns the 8-digit id of "second".
-    short = "SOTTO_SECRET_" + hmac.new(SALT, b"SECRET\0second", hashlib.sha256).hexdigest()[:8]
+    short = "KEEPMUM_SECRET_" + hmac.new(SALT, b"SECRET\0second", hashlib.sha256).hexdigest()[:8]
     v._values[short] = "someone else"
     ph = v.placeholder("SECRET", "second")
     assert len(ph.rsplit("_", 1)[1]) == 12 and v.value(ph) == "second"
@@ -118,7 +118,7 @@ def test_vault_never_shows_values():
 
 
 def test_salt_file_is_private(tmp_path):
-    path = tmp_path / "sotto" / "salt"
+    path = tmp_path / "keepmum" / "salt"
     salt = _salt_from_file(path)
     assert len(salt) == 32 and _salt_from_file(path) == salt
     assert path.stat().st_mode & 0o777 == 0o600
@@ -185,7 +185,7 @@ def test_request_walk_masks_content_and_keeps_protocol_fields():
     assert FAKE_TOKEN not in json.dumps(msgs[2])
     assert msgs[2]["content"][2]["id"] == "x1"
     assert body["messages"][0]["content"].endswith("fail?") and FAKE_TOKEN in body["messages"][0]["content"]  # input not mutated
-    assert dumped.count("SOTTO_SECRET_") >= 6
+    assert dumped.count("KEEPMUM_SECRET_") >= 6
 
 
 def test_scan_reports_without_printing_the_value(tmp_path):
@@ -205,7 +205,7 @@ def test_scan_clean_file_exits_zero(tmp_path):
 
 @pytest.mark.parametrize("system", [None, "You are helpful.", [{"type": "text", "text": "a", "cache_control": {"type": "ephemeral"}}]])
 def test_placeholder_hint_is_appended_last_and_stable(system):
-    from sotto.redact import PLACEHOLDER_HINT
+    from keepmum.redact import PLACEHOLDER_HINT
 
     r = Redactor(Fixed(lambda t: []), Vault(SALT))
     body = {"model": "m", "messages": []}

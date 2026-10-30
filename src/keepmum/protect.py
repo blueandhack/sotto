@@ -1,4 +1,4 @@
-"""`sotto protect`: route every Claude Code session through `sotto serve`.
+"""`keepmum protect`: route every Claude Code session through `keepmum serve`.
 
 Sets `env.ANTHROPIC_BASE_URL` in Claude Code's user settings file. Claude Code reads that file in
 the terminal, VS Code, JetBrains and the desktop app, and a value there replaces the same
@@ -30,12 +30,12 @@ def settings_path() -> Path:
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "settings.json"
 
 
-def sotto_url(port: int) -> str:
+def keepmum_url(port: int) -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def is_sotto_url(value: str, port: int) -> bool:
-    """Our own proxy: loopback on sotto's port, with no path."""
+def is_keepmum_url(value: str, port: int) -> bool:
+    """Our own proxy: loopback on keepmum's port, with no path."""
     try:
         u = urlsplit(value)
         return (u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost") and u.port == port
@@ -69,8 +69,8 @@ def _read(path: Path) -> dict:
 def _write(path: Path, data: dict, backup: bool = True) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if backup and path.exists():
-        shutil.copy2(path, path.with_name(path.name + ".sotto-backup"))
-    tmp = path.with_name(path.name + ".sotto-tmp")
+        shutil.copy2(path, path.with_name(path.name + ".keepmum-backup"))
+    tmp = path.with_name(path.name + ".keepmum-tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n")
     if path.exists():
         os.chmod(tmp, path.stat().st_mode & 0o777)
@@ -80,7 +80,7 @@ def _write(path: Path, data: dict, backup: bool = True) -> None:
 def status(port: int) -> Status:
     path = settings_path()
     value = _read(path).get("env", {}).get(KEY)
-    return Status(path, isinstance(value, str) and is_sotto_url(value, port), value)
+    return Status(path, isinstance(value, str) and is_keepmum_url(value, port), value)
 
 
 def enable(port: int) -> Status:
@@ -88,11 +88,11 @@ def enable(port: int) -> Status:
     data = _read(path)
     env = data.setdefault("env", {})
     current = env.get(KEY)
-    if current is not None and not (isinstance(current, str) and is_sotto_url(current, port)):
-        raise ProtectError(f"{path} already sends Claude Code to {current}; set it as sotto's upstream "
-                           "([server] upstream in ~/.config/sotto/config.toml) and remove it there first")
-    if current != sotto_url(port):
-        env[KEY] = sotto_url(port)
+    if current is not None and not (isinstance(current, str) and is_keepmum_url(current, port)):
+        raise ProtectError(f"{path} already sends Claude Code to {current}; set it as keepmum's upstream "
+                           "([server] upstream in ~/.config/keepmum/config.toml) and remove it there first")
+    if current != keepmum_url(port):
+        env[KEY] = keepmum_url(port)
         _write(path, data)
     return status(port)
 
@@ -102,7 +102,7 @@ def disable(port: int) -> Status:
     data = _read(path)
     env = data.get("env", {})
     current = env.get(KEY)
-    if current is not None and isinstance(current, str) and is_sotto_url(current, port):
+    if current is not None and isinstance(current, str) and is_keepmum_url(current, port):
         del env[KEY]
         if not env:
             data.pop("env")
@@ -113,13 +113,13 @@ def disable(port: int) -> Status:
 # --- Excluded projects -----------------------------------------------------------------------
 #
 # A project is excluded by setting env.ANTHROPIC_BASE_URL in its `.claude/settings.local.json`
-# to where sotto would have forwarded (the upstream). Project local settings outrank the user
+# to where keepmum would have forwarded (the upstream). Project local settings outrank the user
 # settings `enable` writes, the file stays out of git, and Claude Code applies its env once the
-# folder is trusted (until then, the project still goes through sotto). sotto records each
+# folder is trusted (until then, the project still goes through keepmum). keepmum records each
 # exclusion so it can list them and tell its own value from someone else's.
 
 def excluded_file() -> Path:
-    return Path.home() / ".config" / "sotto" / "excluded.json"
+    return Path.home() / ".config" / "keepmum" / "excluded.json"
 
 
 def project_root(path: Path) -> Path:
@@ -165,7 +165,7 @@ def _save_registry(reg: dict[str, str]) -> None:
 
 
 def is_excluded(path: Path) -> str | None:
-    """The URL Claude Code goes to directly in the project holding `path`, if sotto excluded it."""
+    """The URL Claude Code goes to directly in the project holding `path`, if keepmum excluded it."""
     root = project_root(path)
     url = _registry().get(str(root))
     if url is None:
@@ -196,13 +196,13 @@ def _keep_out_of_git(root: Path, file: Path) -> None:
             info = common / "info" / "exclude"
             info.parent.mkdir(parents=True, exist_ok=True)
             with open(info, "a") as f:
-                f.write(f"\n# added by sotto exclude\n/{rel}\n")
+                f.write(f"\n# added by keepmum exclude\n/{rel}\n")
     except (OSError, subprocess.TimeoutExpired) as e:
         raise ProtectError(f"could not check git for {root}: {e}") from e
 
 
 def exclude(path: Path, upstream: str) -> Path:
-    """Send Claude Code in this project straight to `upstream`, around sotto. Returns the root."""
+    """Send Claude Code in this project straight to `upstream`, around keepmum. Returns the root."""
     root = project_root(path)
     file = _local_settings(root)
     data = _read(file)
@@ -220,7 +220,7 @@ def exclude(path: Path, upstream: str) -> Path:
 
 
 def include(path: Path) -> Path:
-    """Undo `exclude`: remove sotto's value from the project's local settings."""
+    """Undo `exclude`: remove keepmum's value from the project's local settings."""
     root = project_root(path)
     reg = _registry()
     url = reg.pop(str(root), None)

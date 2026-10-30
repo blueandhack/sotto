@@ -5,8 +5,8 @@ import tomllib
 
 import pytest
 
-from sotto import clients
-from sotto.protect import ProtectError
+from keepmum import clients
+from keepmum.protect import ProtectError
 
 PORT = 7788
 
@@ -31,14 +31,14 @@ def test_codex_on_off_keeps_the_rest_of_the_config(homes):
     cfg.write_text(original)
     st = clients.codex_enable(PORT)
     data = tomllib.loads(cfg.read_text())
-    assert st["on"] and data["model_provider"] == "sotto" and data["model"] == "gpt-5"
+    assert st["on"] and data["model_provider"] == "keepmum" and data["model"] == "gpt-5"
     assert data["mcp_servers"]["docs"]["command"] == "docs-mcp"
-    prov = data["model_providers"]["sotto"]
+    prov = data["model_providers"]["keepmum"]
     assert prov["base_url"] == "http://127.0.0.1:7788/chatgpt/backend-api/codex"  # no auth.json: ChatGPT login
     assert prov["supports_websockets"] is False and prov["requires_openai_auth"] is True
-    assert prov["http_headers"] == {"x-sotto-client": "codex"}
+    assert prov["http_headers"] == {"x-keepmum-client": "codex"}
     clients.codex_enable(PORT)  # twice: still one block
-    assert cfg.read_text().count("[model_providers.sotto]") == 1
+    assert cfg.read_text().count("[model_providers.keepmum]") == 1
     assert not clients.codex_disable(PORT)["on"]
     assert cfg.read_text() == original
 
@@ -46,7 +46,7 @@ def test_codex_on_off_keeps_the_rest_of_the_config(homes):
 def test_codex_api_key_login_goes_to_the_openai_route(homes):
     (homes / "codex" / "auth.json").write_text(json.dumps({"auth_mode": "apikey", "OPENAI_API_KEY": "x"}))
     clients.codex_enable(PORT)
-    prov = tomllib.loads((homes / "codex" / "config.toml").read_text())["model_providers"]["sotto"]
+    prov = tomllib.loads((homes / "codex" / "config.toml").read_text())["model_providers"]["keepmum"]
     assert prov["base_url"] == "http://127.0.0.1:7788/openai/v1"
 
 
@@ -67,7 +67,7 @@ def test_pi_on_off_and_the_users_own_proxy(homes):
     st = clients.pi_enable(PORT)
     data = json.loads(models.read_text())["providers"]
     assert st["providers"] == ["anthropic", "openai-codex"] and st["other"] == ["openai"]
-    assert data["anthropic"] == {"baseUrl": "http://127.0.0.1:7788", "headers": {"x-sotto-client": "pi"}}
+    assert data["anthropic"] == {"baseUrl": "http://127.0.0.1:7788", "headers": {"x-keepmum-client": "pi"}}
     assert data["openai"] == original["providers"]["openai"]  # someone else's proxy: untouched
     clients.pi_disable(PORT)
     assert json.loads(models.read_text()) == original
@@ -82,11 +82,11 @@ def test_protect_reports_each_client(homes, monkeypatch, tmp_path):
     assert "not valid TOML" in out["codex"]["error"]  # one broken config never stops the others
 
 
-def test_sotto_codex_runs_codex_through_the_proxy(tmp_path, monkeypatch):
+def test_keepmum_codex_runs_codex_through_the_proxy(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto import launch
-    from sotto.cli import app
+    from keepmum import launch
+    from keepmum.cli import app
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -101,8 +101,8 @@ def test_sotto_codex_runs_codex_through_the_proxy(tmp_path, monkeypatch):
     r = CliRunner().invoke(app, ["codex", "exec", "hi"])
     args = json.loads((tmp_path / "out").read_text())
     assert r.exit_code == 0 and args[-2:] == ["exec", "hi"]
-    assert 'model_provider="sotto"' in args and 'model_providers.sotto.supports_websockets=false' in args
-    assert 'model_providers.sotto.base_url="http://127.0.0.1:7788/chatgpt/backend-api/codex"' in args
+    assert 'model_provider="keepmum"' in args and 'model_providers.keepmum.supports_websockets=false' in args
+    assert 'model_providers.keepmum.base_url="http://127.0.0.1:7788/chatgpt/backend-api/codex"' in args
 
 
 def test_a_tool_that_is_not_installed_is_skipped(homes):
@@ -128,7 +128,7 @@ def test_opencode_on_off_keeps_the_rest_of_the_config(homes):
     data = json.loads(cfg.read_text())
     assert st["on"] and st["providers"] == ["anthropic", "openai"] and data["model"] == original["model"]
     assert data["provider"]["anthropic"]["options"] == {
-        "timeout": 600000, "baseURL": "http://127.0.0.1:7788/v1", "headers": {"x-sotto-client": "opencode"}}
+        "timeout": 600000, "baseURL": "http://127.0.0.1:7788/v1", "headers": {"x-keepmum-client": "opencode"}}
     assert data["provider"]["openai"]["options"]["baseURL"] == "http://127.0.0.1:7788/openai/v1"
     clients.opencode_enable(PORT)  # twice: the same file
     assert json.loads(cfg.read_text()) == data
@@ -138,7 +138,7 @@ def test_opencode_on_off_keeps_the_rest_of_the_config(homes):
 
 def test_opencode_new_config_and_a_gateway_set_in_jsonc(homes):
     d = opencode_dir(homes)
-    # opencode.jsonc is read after opencode.json, so its base URL wins: sotto reports it, never edits it.
+    # opencode.jsonc is read after opencode.json, so its base URL wins: keepmum reports it, never edits it.
     jsonc = '{\n  // the team gateway\n  "provider": {"openai": {"options": {"baseURL": "https://gw.corp.internal/v1",},},},\n}\n'
     (d / "opencode.jsonc").write_text(jsonc)
     st = clients.opencode_enable(PORT)

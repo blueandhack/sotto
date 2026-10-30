@@ -1,30 +1,30 @@
-"""Point Codex, pi and opencode at sotto (`sotto protect`), and run Codex through it once (`sotto codex`).
+"""Point Codex, pi and opencode at keepmum (`keepmum protect`), and run Codex through it once (`keepmum codex`).
 
 Verified Oct 27, 2026 against Codex 0.147 and pi 0.84:
 
-- Codex cannot override its built-in `openai` provider, so sotto adds a `sotto` provider in
+- Codex cannot override its built-in `openai` provider, so keepmum adds a `keepmum` provider in
   ~/.codex/config.toml (CODEX_HOME respected) and selects it with a top-level
   `model_provider`. `requires_openai_auth` keeps the user's ChatGPT or API-key login;
-  `supports_websockets = false` skips the WebSocket transport sotto cannot scan, so Codex goes
+  `supports_websockets = false` skips the WebSocket transport keepmum cannot scan, so Codex goes
   straight to HTTPS. A ChatGPT login is served by chatgpt.com/backend-api/codex, an API key
   by api.openai.com/v1.
 - pi overrides a built-in provider's base URL in ~/.pi/agent/models.json
-  (PI_CODING_AGENT_DIR respected). sotto sets it for anthropic, openai and openai-codex.
+  (PI_CODING_AGENT_DIR respected). keepmum sets it for anthropic, openai and openai-codex.
 
 Verified Oct 29, 2026 against opencode 1.19.5 and 2.2.1 (source):
 
 - opencode merges global config.json, opencode.json, then opencode.jsonc from
   $XDG_CONFIG_HOME/opencode (default ~/.config/opencode), later files winning key by key.
-  sotto writes `provider.<id>.options.baseURL` and `headers` into opencode.json, the 1.x shape
+  keepmum writes `provider.<id>.options.baseURL` and `headers` into opencode.json, the 1.x shape
   that 2.x still reads, for anthropic and openai; their SDKs then call {base}/v1/messages and
   {base}/openai/v1/responses. An opencode.jsonc or a 2.x `providers` entry that sets its own
-  base URL wins and is reported, never edited. sotto edits only a plain-JSON opencode.json.
+  base URL wins and is reported, never edited. keepmum edits only a plain-JSON opencode.json.
 - A ChatGPT login in 2.x keeps the configured base URL and sends `chatgpt-account-id`, which
   the proxy routes to chatgpt.com. 1.x replaces the URL with chatgpt.com itself, so its OpenAI
-  traffic never reaches sotto; status says so instead of claiming it is covered.
+  traffic never reaches keepmum; status says so instead of claiming it is covered.
 
-All three get an `x-sotto-client` header, so the dashboard can tell clients apart; the proxy drops
-it before forwarding. Only what sotto added is ever removed, and a different base URL the user
+All three get an `x-keepmum-client` header, so the dashboard can tell clients apart; the proxy drops
+it before forwarding. Only what keepmum added is ever removed, and a different base URL the user
 already set is left alone and reported.
 """
 
@@ -38,11 +38,11 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from .protect import ProtectError, _read, _write, sotto_url
+from .protect import ProtectError, _read, _write, keepmum_url
 
-CODEX_MARK = "# sotto protect"
-CODEX_BEGIN = "# >>> sotto protect: routes Codex through sotto; `sotto protect off` removes this block"
-CODEX_END = "# <<< sotto protect"
+CODEX_MARK = "# keepmum protect"
+CODEX_BEGIN = "# >>> keepmum protect: routes Codex through keepmum; `keepmum protect off` removes this block"
+CODEX_END = "# <<< keepmum protect"
 
 
 # --- Codex --------------------------------------------------------------------------
@@ -62,21 +62,21 @@ def codex_auth_mode() -> str:
 
 
 def codex_base_url(port: int) -> str:
-    base = sotto_url(port)
+    base = keepmum_url(port)
     return f"{base}/openai/v1" if codex_auth_mode() == "apikey" else f"{base}/chatgpt/backend-api/codex"
 
 
 def codex_provider(port: int) -> dict:
-    return {"name": "sotto", "base_url": codex_base_url(port), "wire_api": "responses",
+    return {"name": "keepmum", "base_url": codex_base_url(port), "wire_api": "responses",
             "requires_openai_auth": True, "supports_websockets": False,
-            "http_headers": {"x-sotto-client": "codex"}}
+            "http_headers": {"x-keepmum-client": "codex"}}
 
 
 def codex_args(port: int) -> list[str]:
-    """`-c` overrides that send one Codex run through sotto, leaving its config file alone."""
-    out = ["-c", 'model_provider="sotto"']
+    """`-c` overrides that send one Codex run through keepmum, leaving its config file alone."""
+    out = ["-c", 'model_provider="keepmum"']
     for key, value in codex_provider(port).items():
-        out += ["-c", f"model_providers.sotto.{key}={_toml(value)}"]
+        out += ["-c", f"model_providers.keepmum.{key}={_toml(value)}"]
     return out
 
 
@@ -116,9 +116,9 @@ def codex_status(port: int) -> dict:
         cfg = tomllib.loads(path.read_text()) if path.exists() else {}
     except tomllib.TOMLDecodeError as e:
         return {"installed": True, "on": False, "error": f"{path} is not valid TOML ({e})"}
-    provider = (cfg.get("model_providers") or {}).get("sotto") or {}
-    on = cfg.get("model_provider") == "sotto" and provider.get("base_url") == codex_base_url(port)
-    other = cfg.get("model_provider") not in (None, "sotto") and cfg.get("model_provider")
+    provider = (cfg.get("model_providers") or {}).get("keepmum") or {}
+    on = cfg.get("model_provider") == "keepmum" and provider.get("base_url") == codex_base_url(port)
+    other = cfg.get("model_provider") not in (None, "keepmum") and cfg.get("model_provider")
     return {"installed": True, "on": on, "config": str(path), **({"other": other} if other else {})}
 
 
@@ -129,13 +129,13 @@ def codex_enable(port: int) -> dict:
         current = tomllib.loads(text).get("model_provider")
     except tomllib.TOMLDecodeError as e:
         raise ProtectError(f"{path} is not valid TOML ({e}); fix it first") from e
-    if current not in (None, "sotto") and CODEX_MARK not in text:
-        raise ProtectError(f"{path} already selects model_provider {current!r}; sotto leaves it alone")
+    if current not in (None, "keepmum") and CODEX_MARK not in text:
+        raise ProtectError(f"{path} already selects model_provider {current!r}; keepmum leaves it alone")
     base = _strip_codex(text)
-    block = [CODEX_BEGIN, "[model_providers.sotto]"]
+    block = [CODEX_BEGIN, "[model_providers.keepmum]"]
     block += [f"{k} = {_toml(v)}" for k, v in codex_provider(port).items()]
     block.append(CODEX_END)
-    new = f'model_provider = "sotto"  {CODEX_MARK}\n' + base + ("\n" if base else "") + "\n".join(block) + "\n"
+    new = f'model_provider = "keepmum"  {CODEX_MARK}\n' + base + ("\n" if base else "") + "\n".join(block) + "\n"
     tomllib.loads(new)  # never write a file Codex cannot read
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_text(path, new)
@@ -155,8 +155,8 @@ def codex_disable(port: int) -> dict:
 
 def _write_text(path: Path, text: str) -> None:
     if path.exists():
-        shutil.copy2(path, path.with_name(path.name + ".sotto-backup"))
-    tmp = path.with_name(path.name + ".sotto-tmp")
+        shutil.copy2(path, path.with_name(path.name + ".keepmum-backup"))
+    tmp = path.with_name(path.name + ".keepmum-tmp")
     tmp.write_text(text)
     if path.exists():
         os.chmod(tmp, path.stat().st_mode & 0o777)
@@ -170,7 +170,7 @@ def pi_dir() -> Path:
 
 
 def pi_providers(port: int) -> dict[str, str]:
-    base = sotto_url(port)
+    base = keepmum_url(port)
     return {"anthropic": base, "openai": f"{base}/openai/v1", "openai-codex": f"{base}/chatgpt/backend-api"}
 
 
@@ -199,7 +199,7 @@ def pi_enable(port: int) -> dict:
         if entry.get("baseUrl") not in (None, url):
             continue  # the user's own proxy for this provider: left alone, reported by status
         entry["baseUrl"] = url
-        entry.setdefault("headers", {})["x-sotto-client"] = "pi"
+        entry.setdefault("headers", {})["x-keepmum-client"] = "pi"
     path.parent.mkdir(parents=True, exist_ok=True)
     _write(path, data)
     return pi_status(port)
@@ -218,7 +218,7 @@ def pi_disable(port: int) -> dict:
             continue
         entry.pop("baseUrl")
         headers = entry.get("headers") or {}
-        headers.pop("x-sotto-client", None)
+        headers.pop("x-keepmum-client", None)
         if not headers:
             entry.pop("headers", None)
         if not entry:
@@ -241,7 +241,7 @@ def opencode_dir() -> Path:
 
 
 def opencode_providers(port: int) -> dict[str, str]:
-    base = sotto_url(port)
+    base = keepmum_url(port)
     return {"anthropic": f"{base}/v1", "openai": f"{base}/openai/v1"}
 
 
@@ -341,7 +341,7 @@ def opencode_status(port: int) -> dict:
     out = {"installed": True, "on": bool(ours), "providers": ours, "config": str(folder / "opencode.json"),
            **({"other": others} if others else {})}
     if "openai" in ours and opencode_major() == 1 and _opencode_chatgpt_login():
-        out["warning"] = "opencode 1.x sends a ChatGPT login straight to chatgpt.com, around sotto; update to 2.x"
+        out["warning"] = "opencode 1.x sends a ChatGPT login straight to chatgpt.com, around keepmum; update to 2.x"
     return out
 
 
@@ -351,7 +351,7 @@ def opencode_enable(port: int) -> dict:
     try:
         data = json.loads(path.read_text()) if path.exists() else {"$schema": "https://opencode.ai/config.json"}
     except ValueError as e:
-        raise ProtectError(f"{path} has comments or is not plain JSON; sotto will not rewrite it") from e
+        raise ProtectError(f"{path} has comments or is not plain JSON; keepmum will not rewrite it") from e
     providers = data.setdefault("provider", {})
     if not isinstance(providers, dict):
         raise ProtectError(f"{path}: provider is not an object")
@@ -361,7 +361,7 @@ def opencode_enable(port: int) -> dict:
         entry = providers.setdefault(name, {})
         options = entry.setdefault("options", {})
         options["baseURL"] = url
-        options.setdefault("headers", {})["x-sotto-client"] = "opencode"
+        options.setdefault("headers", {})["x-keepmum-client"] = "opencode"
     _write(path, data)
     return opencode_status(port)
 
@@ -373,7 +373,7 @@ def opencode_disable(port: int) -> dict:
     try:
         data = json.loads(path.read_text())
     except ValueError as e:
-        raise ProtectError(f"{path} has comments or is not plain JSON; sotto will not rewrite it") from e
+        raise ProtectError(f"{path} has comments or is not plain JSON; keepmum will not rewrite it") from e
     providers = data.get("provider") or {}
     changed = False
     for name, url in opencode_providers(port).items():
@@ -383,7 +383,7 @@ def opencode_disable(port: int) -> dict:
             continue
         options.pop("baseURL")
         headers = options.get("headers") or {}
-        headers.pop("x-sotto-client", None)
+        headers.pop("x-keepmum-client", None)
         if not headers:
             options.pop("headers", None)
         if not options:

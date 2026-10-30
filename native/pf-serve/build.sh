@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # build.sh [out-dir]: pf-serve for macOS on Apple silicon (Metal), from pinned sources.
-# The default out-dir, ~/.local/share/sotto/bin, is where sotto looks for it.
+# The default out-dir, ~/.local/share/keepmum/bin, is where keepmum looks for it.
 #
-# pf-serve runs OpenAI Privacy Filter on privacy-filter.cpp (ggml) for sotto's L2 detector
-# (src/sotto/detect/pfserve.py). pf-serve.cpp, CMakeLists.txt and patches/ come from magpie
+# pf-serve runs OpenAI Privacy Filter on privacy-filter.cpp (ggml) for keepmum's L2 detector
+# (src/keepmum/detect/pfserve.py). pf-serve.cpp, CMakeLists.txt and patches/ come from magpie
 # (MIT, LICENSE-magpie) at commit MAGPIE_COMMIT; privacy-filter.cpp (MIT) is fetched at
 # PF_COMMIT with its pinned ggml submodule. cmake and ninja run through uvx, so nothing is
 # installed system-wide. Windows and Linux targets (Vulkan, CPU) come later; magpie's
@@ -15,7 +15,7 @@ PF_REPO=https://github.com/localai-org/privacy-filter.cpp
 PF_COMMIT=735a6c28607ee82afc3a670383f41b55266a3b9a
 
 here=$(cd "$(dirname "$0")" && pwd)
-dest=${1:-${XDG_DATA_HOME:-$HOME/.local/share}/sotto/bin}
+dest=${1:-${XDG_DATA_HOME:-$HOME/.local/share}/keepmum/bin}
 out=$(mkdir -p "$dest" && cd "$dest" && pwd)
 work=${PF_WORK:-$here/.work}
 src=$work/privacy-filter.cpp

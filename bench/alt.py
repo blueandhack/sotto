@@ -1,6 +1,6 @@
 """Alternative detectors, for the benchmark only: GLiNER-family PII models and CredSweeper.
 
-None of these is part of the request path. Their libraries are not dependencies of sotto;
+None of these is part of the request path. Their libraries are not dependencies of keepmum;
 install them next to it (`uv pip install gliner gliner2 credsweeper`) to benchmark them.
 """
 
@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from sotto.detect import Span
+from keepmum.detect import Span
 
-# Label sets passed to the zero-shot GLiNER models, mapped to sotto types.
+# Label sets passed to the zero-shot GLiNER models, mapped to keepmum types.
 GLINER2_LABELS = {
     "person": "PERSON", "full_name": "PERSON",
     "email": "EMAIL", "phone_number": "PHONE",

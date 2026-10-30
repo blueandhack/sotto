@@ -682,6 +682,71 @@ wheels = [
 ]
 
 [[package]]
+name = "keepmum"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "httpx" },
+    { name = "keyring" },
+    { name = "starlette" },
+    { name = "typer" },
+    { name = "uvicorn" },
+    { name = "zstandard" },
+]
+
+[package.dev-dependencies]
+afm = [
+    { name = "apple-fm-sdk" },
+]
+dev = [
+    { name = "faker" },
+    { name = "pytest" },
+]
+mlx = [
+    { name = "huggingface-hub" },
+    { name = "mlx" },
+    { name = "mlx-embeddings" },
+    { name = "mlx-lm" },
+    { name = "numpy" },
+    { name = "tokenizers" },
+]
+torch = [
+    { name = "numpy" },
+    { name = "torch" },
+    { name = "transformers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "keyring", specifier = ">=25" },
+    { name = "starlette", specifier = ">=0.45" },
+    { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.32" },
+    { name = "zstandard", specifier = ">=0.23" },
+]
+
+[package.metadata.requires-dev]
+afm = [{ name = "apple-fm-sdk", specifier = ">=0.2.1" }]
+dev = [
+    { name = "faker", specifier = ">=30" },
+    { name = "pytest", specifier = ">=8" },
+]
+mlx = [
+    { name = "huggingface-hub", specifier = ">=0.25" },
+    { name = "mlx", specifier = ">=0.31" },
+    { name = "mlx-embeddings", git = "https://github.com/Blaizzy/mlx-embeddings?rev=9b28270be81211f2b8daed0041aec65ea5dc4b28" },
+    { name = "mlx-lm", specifier = ">=0.28" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "tokenizers", specifier = ">=0.21" },
+]
+torch = [
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "torch", specifier = ">=2.9" },
+    { name = "transformers", specifier = ">=5.6" },
+]
+
+[[package]]
 name = "keyring"
 version = "25.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1952,71 +2017,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/58/15/8b3609fd3830ef7b27b655beb4b4e9c62313a4e8da8c676e142cc210d58e/shellingham-1.5.4.tar.gz", hash = "sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de", size = 10310, upload-time = "2023-10-24T04:13:40.426Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl", hash = "sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686", size = 9755, upload-time = "2023-10-24T04:13:38.866Z" },
-]
-
-[[package]]
-name = "sotto"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "httpx" },
-    { name = "keyring" },
-    { name = "starlette" },
-    { name = "typer" },
-    { name = "uvicorn" },
-    { name = "zstandard" },
-]
-
-[package.dev-dependencies]
-afm = [
-    { name = "apple-fm-sdk" },
-]
-dev = [
-    { name = "faker" },
-    { name = "pytest" },
-]
-mlx = [
-    { name = "huggingface-hub" },
-    { name = "mlx" },
-    { name = "mlx-embeddings" },
-    { name = "mlx-lm" },
-    { name = "numpy" },
-    { name = "tokenizers" },
-]
-torch = [
-    { name = "numpy" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "keyring", specifier = ">=25" },
-    { name = "starlette", specifier = ">=0.45" },
-    { name = "typer", specifier = ">=0.12" },
-    { name = "uvicorn", specifier = ">=0.32" },
-    { name = "zstandard", specifier = ">=0.23" },
-]
-
-[package.metadata.requires-dev]
-afm = [{ name = "apple-fm-sdk", specifier = ">=0.2.1" }]
-dev = [
-    { name = "faker", specifier = ">=30" },
-    { name = "pytest", specifier = ">=8" },
-]
-mlx = [
-    { name = "huggingface-hub", specifier = ">=0.25" },
-    { name = "mlx", specifier = ">=0.31" },
-    { name = "mlx-embeddings", git = "https://github.com/Blaizzy/mlx-embeddings?rev=9b28270be81211f2b8daed0041aec65ea5dc4b28" },
-    { name = "mlx-lm", specifier = ">=0.28" },
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "tokenizers", specifier = ">=0.21" },
-]
-torch = [
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "torch", specifier = ">=2.9" },
-    { name = "transformers", specifier = ">=5.6" },
 ]
 
 [[package]]

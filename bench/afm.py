@@ -17,7 +17,7 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass
 
-from sotto.detect import TYPES, Span
+from keepmum.detect import TYPES, Span
 
 EXTRACT_INSTRUCTIONS = (
     "You are a data-loss-prevention scanner. List every secret and every piece of personal data "
@@ -78,7 +78,7 @@ class _CLIBackend:
     def _schema_file(self, schema: dict) -> str:
         key = schema["title"]
         if key not in self._schemas:
-            f = tempfile.NamedTemporaryFile("w", suffix=".json", prefix="sotto-", delete=False)
+            f = tempfile.NamedTemporaryFile("w", suffix=".json", prefix="keepmum-", delete=False)
             json.dump(schema, f)
             f.close()
             self._schemas[key] = f.name

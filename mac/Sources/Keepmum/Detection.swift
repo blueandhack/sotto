@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Detection page: what sotto found, by type and by detector, and what gets masked.
+/// The Detection page: what keepmum found, by type and by detector, and what gets masked.
 /// Counts and your own settings only: it never shows a masked value.
 struct DetectionPage: View {
     var store: StatsStore
@@ -9,7 +9,7 @@ struct DetectionPage: View {
     var body: some View {
         let d = store.snapshot.detection
         VStack(spacing: 16) {
-            PageHeader(title: "Detection", subtitle: "What sotto finds, and what you let through. Counts only.") { PreviewToggle(store: store) }
+            PageHeader(title: "Detection", subtitle: "What keepmum finds, and what you let through. Counts only.") { PreviewToggle(store: store) }
             HStack(alignment: .top, spacing: 12) {
                 Card(title: "By type", subtitle: "Found in newly scanned text, then allowed by an exception, passed by your settings, or masked") {
                     TypeTable(detection: d, engine: engine)
@@ -199,7 +199,7 @@ private struct RuleList: View {
 
 // MARK: - Your rules
 
-/// Patterns always masked, and exceptions never masked. Saved to sotto's config; running
+/// Patterns always masked, and exceptions never masked. Saved to keepmum's config; running
 /// proxies apply them on their next request.
 private struct RulesCard: View {
     var engine: Engine
@@ -212,7 +212,7 @@ private struct RulesCard: View {
 
     var body: some View {
         let rules = engine.status?.rules ?? .init()
-        Card(title: "Your rules", subtitle: "Always mask a pattern, or never mask something sotto flags. Applies to new requests, no restart.") {
+        Card(title: "Your rules", subtitle: "Always mask a pattern, or never mask something keepmum flags. Applies to new requests, no restart.") {
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 10) {
                     Segmented(options: [(0, "Always mask"), (1, "Never mask")], selection: $kind)

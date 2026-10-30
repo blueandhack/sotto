@@ -1,4 +1,4 @@
-"""`sotto doctor`: read-only checks. It creates nothing (no salt, no token, no files)."""
+"""`keepmum doctor`: read-only checks. It creates nothing (no salt, no token, no files)."""
 
 from __future__ import annotations
 
@@ -41,10 +41,10 @@ def run() -> int:
     binary, model = find_binary(), find_model()
     needed = cfg is None or cfg.model  # with detect.model = false, the rules work alone
     if not needed:
-        _check(r, OK, "model off: the rules work alone (`sotto model on` adds the local model)")
+        _check(r, OK, "model off: the rules work alone (`keepmum model on` adds the local model)")
     missing = FAIL if needed else WARN
     _check(r, OK if binary else missing, f"pf-serve {binary}" if binary else "pf-serve missing: run native/pf-serve/build.sh")
-    _check(r, OK if model else missing, f"model {model}" if model else "model missing: run `sotto setup`")
+    _check(r, OK if model else missing, f"model {model}" if model else "model missing: run `keepmum setup`")
     if binary and model:
         pf = None
         try:
@@ -69,7 +69,7 @@ def run() -> int:
     else:
         _check(r, OK, "install salt not created yet (created on first run)")
 
-    for f in (Path.home() / ".config" / "sotto" / "stats-token", launch.LOG_FILE, launch.RUNTIME_FILE):
+    for f in (Path.home() / ".config" / "keepmum" / "stats-token", launch.LOG_FILE, launch.RUNTIME_FILE):
         if f.exists() and f.stat().st_mode & 0o077:
             _check(r, FAIL, f"{f} is readable by other users (mode {f.stat().st_mode & 0o777:o})")
 
@@ -84,17 +84,17 @@ def run() -> int:
 
     port = cfg.port if cfg else 7788
     if url := is_excluded(Path.cwd()):
-        _check(r, WARN, f"this project is excluded: Claude Code here goes straight to {url}, unscanned (`sotto include` undoes it)")
+        _check(r, WARN, f"this project is excluded: Claude Code here goes straight to {url}, unscanned (`keepmum include` undoes it)")
     risks = launch.bypass_risks(Path.cwd(), port)
-    _check(r, FAIL if risks else OK, "routes around sotto: " + "; ".join(risks) if risks else "nothing routes Claude Code around sotto")
+    _check(r, FAIL if risks else OK, "routes around keepmum: " + "; ".join(risks) if risks else "nothing routes Claude Code around keepmum")
     if cfg and launch.protected(cfg):
         up = launch.shared_serve_port(cfg) is not None
-        _check(r, OK if up else FAIL, "protection on: every Claude Code session goes through sotto serve" if up
-               else "protection on, but sotto serve is not running: Claude Code cannot connect")
+        _check(r, OK if up else FAIL, "protection on: every Claude Code session goes through keepmum serve" if up
+               else "protection on, but keepmum serve is not running: Claude Code cannot connect")
     else:
-        _check(r, OK, "protection off: only `sotto claude` and the VS Code wrapper go through sotto")
+        _check(r, OK, "protection off: only `keepmum claude` and the VS Code wrapper go through keepmum")
     if os.environ.get("ANTHROPIC_BASE_URL"):
-        _check(r, WARN, "ANTHROPIC_BASE_URL is set: `sotto claude` will use it as its upstream")
+        _check(r, WARN, "ANTHROPIC_BASE_URL is set: `keepmum claude` will use it as its upstream")
 
     with socket.socket() as s:
         free = s.connect_ex(("127.0.0.1", port)) != 0
@@ -103,8 +103,8 @@ def run() -> int:
     except (OSError, ValueError):
         running = None
     if running:
-        _check(r, OK, f"sotto running (pid {running.get('pid')}, port {running.get('port')})")
-    _check(r, OK if free else WARN, f"port {port} {'free' if free else 'in use'} for `sotto serve`")
+        _check(r, OK, f"keepmum running (pid {running.get('pid')}, port {running.get('port')})")
+    _check(r, OK if free else WARN, f"port {port} {'free' if free else 'in use'} for `keepmum serve`")
 
     for status, text in r:
         print(f"  {status} {text}")

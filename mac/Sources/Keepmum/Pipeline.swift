@@ -8,11 +8,11 @@ enum FlowGeometry {
 
 /// The live flow as two Sankey diagrams on shared columns.
 ///
-///   Requests out:   clients ─▶ sotto scans ─▶ clean / masked / observed / blocked ┆─▶ providers
-///   Replies back:   clients ◀─ sotto restores (values put back / nothing to) ◀─┆── providers
+///   Requests out:   clients ─▶ keepmum scans ─▶ clean / masked / observed / blocked ┆─▶ providers
+///   Replies back:   clients ◀─ keepmum restores (values put back / nothing to) ◀─┆── providers
 ///
 /// Band width is the number of requests in the window. Each live request sends a dot along its
-/// route: the dot takes each band's color, so it visibly changes at sotto.
+/// route: the dot takes each band's color, so it visibly changes at keepmum.
 struct FlowBandsView: View {
     var flows: Flows
     var pulses: [Pulse]
@@ -179,16 +179,16 @@ private struct FlowBands {
 
         // Requests out.
         var nodes = clients.map { BandLayout.Node(id: "c:" + $0, col: 0, color: Self.clientColor($0)) }
-        nodes.append(.init(id: "sotto", col: 1, color: Theme.text))
+        nodes.append(.init(id: "keepmum", col: 1, color: Theme.text))
         nodes += Self.results.map { BandLayout.Node(id: "r:" + $0, col: 2, color: Self.resultColor($0)) }
         nodes += providers.map { BandLayout.Node(id: "p:" + $0, col: 3, color: Self.providerColor($0)) }
         var links: [BandLayout.Link] = []
         for c in flows.clients {
-            links.append(.init(from: "c:" + c.id, to: "sotto", value: c.sent, color: Self.clientColor(c.id)))
+            links.append(.init(from: "c:" + c.id, to: "keepmum", value: c.sent, color: Self.clientColor(c.id)))
         }
         for r in Self.results {
             let n = flows.out.filter { $0.kind == r }.reduce(0) { $0 + $1.n }
-            links.append(.init(from: "sotto", to: "r:" + r, value: n, color: Self.resultColor(r)))
+            links.append(.init(from: "keepmum", to: "r:" + r, value: n, color: Self.resultColor(r)))
             for p in providers {
                 let m = flows.out.filter { $0.kind == r && $0.provider == p }.reduce(0) { $0 + $1.n }
                 links.append(.init(from: "r:" + r, to: "p:" + p, value: m, color: Self.resultColor(r)))
@@ -271,7 +271,7 @@ private struct FlowBands {
     }
 
     /// A bar: the bands into and out of it. A client or provider is lit in both diagrams, with
-    /// the bands its traffic takes through sotto (from the per-client totals).
+    /// the bands its traffic takes through keepmum (from the per-client totals).
     private func nodeFocus(_ id: String, primary: Int, at p: CGPoint) -> FlowFocus {
         var f = FlowFocus(at: p)
         let route = id.hasPrefix("c:") || id.hasPrefix("p:")
@@ -299,10 +299,10 @@ private struct FlowBands {
         return f
     }
 
-    /// Out: the client or provider, sotto, the results it has traffic in, and the far end.
+    /// Out: the client or provider, keepmum, the results it has traffic in, and the far end.
     private func outRoute(_ id: String, _ key: String) -> Set<String> {
         let mine = flows.out.filter { $0.n > 0 && (id.hasPrefix("c:") ? $0.client == key : $0.provider == key) }
-        var nodes: Set<String> = ["sotto"]
+        var nodes: Set<String> = ["keepmum"]
         for o in mine {
             nodes.insert("r:" + o.kind)
             nodes.insert("c:" + o.client)
@@ -336,7 +336,7 @@ private struct FlowBands {
         if id.hasPrefix("c:") { return flows.clients.first { $0.id == key }?.name ?? key }
         if id.hasPrefix("p:") { return flows.providers.first { $0.id == key }?.name ?? key }
         if id.hasPrefix("r:") { return key.prefix(1).uppercased() + key.dropFirst() }
-        return ["sotto": "sotto", "restored": "Real values put back", "plain": "Nothing to put back"][id] ?? id
+        return ["keepmum": "keepmum", "restored": "Real values put back", "plain": "Nothing to put back"][id] ?? id
     }
 
     func draw(_ ctx: inout GraphicsContext, now: Date, pulses: [Pulse], hover: CGPoint? = nil) {
@@ -377,8 +377,8 @@ private struct FlowBands {
             ctx.draw(Text(s.uppercased()).font(.system(size: 10, weight: .semibold)).kerning(0.4).foregroundStyle(Theme.secondary),
                      at: CGPoint(x: x, y: y), anchor: anchor)
         }
-        for (top, a, b, c, d) in [(outTop, "Requests out →", "sotto scans", "Result", "leaves this Mac"),
-                                  (backTop, "← Replies back", "sotto restores", "", "arrives on this Mac")] {
+        for (top, a, b, c, d) in [(outTop, "Requests out →", "keepmum scans", "Result", "leaves this Mac"),
+                                  (backTop, "← Replies back", "keepmum restores", "", "arrives on this Mac")] {
             let y = top - 14
             h(a, xs[0] - 10, y, .trailing)
             h(b, xs[1] + 4, y, .center)
@@ -466,7 +466,7 @@ private struct FlowBands {
             guard age >= 0, age < FlowGeometry.lifetime else { continue }
             let (layout, route): (BandLayout, [(String, String)]) = switch pulse.kind {
             case .out(let r):
-                (out, [("c:" + pulse.client, "sotto"), ("sotto", "r:" + r)] + (r == "blocked" || r == "failed" ? [] : [("r:" + r, "p:" + pulse.provider)]))
+                (out, [("c:" + pulse.client, "keepmum"), ("keepmum", "r:" + r)] + (r == "blocked" || r == "failed" ? [] : [("r:" + r, "p:" + pulse.provider)]))
             case .back(let restored):
                 (back, [("p:" + pulse.provider, restored ? "restored" : "plain"), (restored ? "restored" : "plain", "c:" + pulse.client)])
             }

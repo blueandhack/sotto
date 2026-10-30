@@ -1,7 +1,7 @@
 """The local proxy: scan requests before they leave, restore responses before the client sees them.
 
 Fail closed everywhere. A request is forwarded only after it was scanned; if scanning fails,
-the body is malformed or compressed in a way sotto cannot read, or the endpoint is one sotto
+the body is malformed or compressed in a way keepmum cannot read, or the endpoint is one keepmum
 does not scan, the request goes nowhere and the client gets an API-style error. WebSocket
 upgrades are refused (Codex then falls back to HTTPS). Logs carry paths, statuses and counts,
 never bodies, values or headers.
@@ -45,7 +45,7 @@ from .responses import ResponsesStreamRestorer, restore_responses
 from .restore import DEFAULT_POLICY, StreamRestorer, restore_response
 from .stats import Stats, client_of, flows, provider_of
 
-log = logging.getLogger("sotto")
+log = logging.getLogger("keepmum")
 
 UPSTREAM = "https://api.anthropic.com"
 OPENAI_UPSTREAM = "https://api.openai.com"
@@ -53,15 +53,15 @@ CHATGPT_UPSTREAM = "https://chatgpt.com"
 MESSAGES = frozenset({"/v1/messages", "/v1/messages/count_tokens"})
 LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 # Not forwarded upstream; accept-encoding is replaced so responses arrive uncompressed, and
-# x-sotto-client (set by `sotto protect` in client configs) is for sotto's stats only.
+# x-keepmum-client (set by `keepmum protect` in client configs) is for keepmum's stats only.
 HOP_HEADERS = frozenset({"host", "content-length", "connection", "keep-alive", "proxy-connection", "transfer-encoding",
-                         "te", "trailer", "upgrade", "accept-encoding", "x-sotto-client"})
+                         "te", "trailer", "upgrade", "accept-encoding", "x-keepmum-client"})
 RESPONSE_DROP = frozenset({"content-length", "content-encoding", "transfer-encoding", "connection", "keep-alive"})
 
 
 def api_error(status: int, kind: str, message: str) -> JSONResponse:
     """An error in the Anthropic API's shape, so Claude Code shows it instead of crashing."""
-    return JSONResponse({"type": "error", "error": {"type": kind, "message": f"sotto: {message}"}}, status_code=status)
+    return JSONResponse({"type": "error", "error": {"type": kind, "message": f"keepmum: {message}"}}, status_code=status)
 
 
 def _host_is_local(request: Request) -> bool:
@@ -90,7 +90,7 @@ def decode_body(raw: bytes, encoding: str) -> bytes:
 @dataclass(frozen=True)
 class Target:
     """Where a request goes: the provider (for stats), its upstream, the path there, and the API
-    whose body sotto scans (None: not a scanned endpoint)."""
+    whose body keepmum scans (None: not a scanned endpoint)."""
     provider: str
     base: str
     path: str
@@ -142,12 +142,12 @@ class Proxy:
         path = request.url.path
         if not _host_is_local(request):
             return api_error(403, "permission_error", "requests must come from this machine")
-        if path.startswith("/_sotto/"):
+        if path.startswith("/_keepmum/"):
             return self._local(request, path)
         if request.headers.get("upgrade"):
             # Without a WebSocket library uvicorn hands an upgrade over as a plain GET: refuse it
             # here too, so it is never forwarded. Clients fall back to HTTPS.
-            return api_error(403, "permission_error", "sotto does not scan WebSockets; use HTTPS")
+            return api_error(403, "permission_error", "keepmum does not scan WebSockets; use HTTPS")
         t = self.target(path, "chatgpt-account-id" in request.headers)
         if t.api and request.method == "POST":
             return await self._scanned(request, t)
@@ -155,20 +155,20 @@ class Proxy:
         if self._observe():
             return await self._forward_raw(request, t, body, outcome="observed")
         if body or request.method not in ("GET", "HEAD", "OPTIONS"):
-            # An endpoint sotto does not scan must not carry content out unscanned.
+            # An endpoint keepmum does not scan must not carry content out unscanned.
             log.warning("blocked %s %s: endpoint is not scanned", request.method, path)
             self.stats.record(path, "blocked", 403, origin=self._origin(request, t))
-            return api_error(403, "permission_error", f"refusing to forward {request.method} {path}: sotto does not scan this endpoint")
+            return api_error(403, "permission_error", f"refusing to forward {request.method} {path}: keepmum does not scan this endpoint")
         return await self._forward_raw(request, t)
 
     def _local(self, request: Request, path: str) -> Response:
-        if path == "/_sotto/health":
+        if path == "/_keepmum/health":
             return JSONResponse({"ok": True})
-        if path in ("/_sotto/stats", "/_sotto/history", "/_sotto/flows", "/_sotto/findings") and request.method == "GET":
+        if path in ("/_keepmum/stats", "/_keepmum/history", "/_keepmum/flows", "/_keepmum/findings") and request.method == "GET":
             given = request.headers.get("authorization", "").removeprefix("Bearer ")
             if not self.stats_token or not hmac.compare_digest(given, self.stats_token):
                 return api_error(401, "authentication_error", "missing or wrong stats token")
-        if path == "/_sotto/flows" and request.method == "GET":
+        if path == "/_keepmum/flows" and request.method == "GET":
             try:
                 window = max(60.0, min(float(request.query_params.get("window", 3600)), 30 * 86400))
             except ValueError:
@@ -176,13 +176,13 @@ class Proxy:
             history = self.stats.history
             events = history.events() if history else list(self.stats.events)
             return JSONResponse({"window": window, **flows(events, time.time() - window)})
-        if path == "/_sotto/findings" and request.method == "GET":
+        if path == "/_keepmum/findings" and request.method == "GET":
             # What was masked in new text, newest first: types, rules, lengths, and the first and
             # last character of values of 8 or more ([log] previews). In memory only.
             if not self._previews():
                 self.stats.drop_previews()
             return JSONResponse({"findings": self.stats.findings_page(), "previews": self._previews()})
-        if path == "/_sotto/history" and request.method == "GET":
+        if path == "/_keepmum/history" and request.method == "GET":
             q = request.query_params
             try:
                 before = float(q["before"]) if "before" in q else None
@@ -192,14 +192,14 @@ class Proxy:
             history = self.stats.history
             events = history.page(before, limit, q.get("kind")) if history else []
             return JSONResponse({"events": events})
-        if path == "/_sotto/stats" and request.method == "GET":
+        if path == "/_keepmum/stats" and request.method == "GET":
             detector = self.redactor.detector
             detection = detector.report() if hasattr(detector, "report") else dict(getattr(detector, "funnel", {}))
             # The detector can change while running (detect.model): report the current one.
             info = {**self.info, "detector": getattr(detector, "name", self.info.get("detector"))}
             return JSONResponse(self.stats.snapshot(upstream=self.upstream, vault_size=len(self.redactor.vault),
                                                     detection=detection, **info, observe=self._observe()))
-        return api_error(404, "not_found_error", "no such sotto endpoint")
+        return api_error(404, "not_found_error", "no such keepmum endpoint")
 
     # --- Scanned endpoints ----------------------------------------------------------
 
@@ -214,7 +214,7 @@ class Proxy:
                 raise ValueError("not an object")
         except Exception:
             self.stats.record(path, "rejected", 400, origin=origin)
-            return api_error(400, "invalid_request_error", "request body is not a JSON object sotto can read; nothing was sent")
+            return api_error(400, "invalid_request_error", "request body is not a JSON object keepmum can read; nothing was sent")
         started = time.perf_counter()
         try:
             masked, counts, new = await anyio.to_thread.run_sync(self._redact, body, t.api, origin)
@@ -280,13 +280,13 @@ class Proxy:
     @staticmethod
     def _origin(request: Request, t: Target) -> tuple[str, str]:
         """(client, provider) for the stats: who sent the request, and where it goes."""
-        named = "".join(c for c in request.headers.get("x-sotto-client", "").lower() if c.isalnum() or c in "-_.")[:32]
+        named = "".join(c for c in request.headers.get("x-keepmum-client", "").lower() if c.isalnum() or c in "-_.")[:32]
         return named or client_of(request.headers.get("user-agent", "")), t.provider
 
     @staticmethod
     def _warn_unresolved(path: str, restored: Counter) -> None:
         if restored.get("unresolved"):
-            log.warning("%s: %d placeholder(s) in the reply could not be restored (made by another sotto process, "
+            log.warning("%s: %d placeholder(s) in the reply could not be restored (made by another keepmum process, "
                         "or before a restart); they reach the client as placeholders", path, restored["unresolved"])
 
     def _redact(self, body: dict, api: str = "messages", origin=None, outcome: str = "masked") -> tuple[dict, Counter, int]:

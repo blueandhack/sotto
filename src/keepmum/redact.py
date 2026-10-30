@@ -12,15 +12,15 @@ from .vault import Vault
 
 # Signed or binary blocks are resent exactly as the API produced them.
 PASS_THROUGH = frozenset({"thinking", "redacted_thinking", "image"})
-# For block types sotto does not know, only these fields are scanned. Ids, names, signatures
+# For block types keepmum does not know, only these fields are scanned. Ids, names, signatures
 # and every other protocol field stay as they are.
 CONTENT_KEYS = ("text", "content", "input")
 
 # Appended to every request's system prompt, always the same text, so the prompt cache stays
-# valid. Without it Claude sees SOTTO_SECRET_... and concludes the file holds a fake value.
+# valid. Without it Claude sees KEEPMUM_SECRET_... and concludes the file holds a fake value.
 PLACEHOLDER_HINT = (
-    "Note from sotto, a local privacy proxy on this machine: values of the form "
-    "SOTTO_<TYPE>_<8 hex digits> (SOTTO_SECRET_xxxxxxxx, SOTTO_PERSON_xxxxxxxx, SOTTO_EMAIL_xxxxxxxx, "
+    "Note from keepmum, a local privacy proxy on this machine: values of the form "
+    "KEEPMUM_<TYPE>_<8 hex digits> (KEEPMUM_SECRET_xxxxxxxx, KEEPMUM_PERSON_xxxxxxxx, KEEPMUM_EMAIL_xxxxxxxx, "
     "and so on) are placeholders for real values that were redacted before this request left "
     "the user's computer. Treat each one as the real value: copy it exactly when a value is "
     "needed, and do not call it fake, masked or a placeholder. Real values are restored locally "

@@ -1,9 +1,9 @@
 import pytest
 
-from sotto.detect import Span
-from sotto.detect.merge import merge
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector, iban_valid, luhn_valid
+from keepmum.detect import Span
+from keepmum.detect.merge import merge
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector, iban_valid, luhn_valid
 
 # Synthetic values only: random strings in provider formats, never real credentials.
 FAKE_GITHUB = "ghp_" + "Zq8vX2mN4pL7kR9tY3wB6cF1hJ5dG0sAe7Qw"
@@ -38,7 +38,7 @@ def test_connection_string_marks_only_the_password(rules):
     "password: string;",
     "MAX_TOKENS = 4096",
     "postgres://user:password@localhost:5432/mydb",
-    "SOTTO_SECRET_7f3a9c2e appears in a later turn",
+    "KEEPMUM_SECRET_7f3a9c2e appears in a later turn",
     '"integrity": "sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg=="',
     "len(tok.encode(text, add_special_tokens=False))",  # a keyword argument, closed by brackets
     "secret_ref = None]",
@@ -116,7 +116,7 @@ def test_refine_narrows_url_to_password(rules):
 @pytest.mark.parametrize("text, value, kind, keep", [
     ("request_id=0d6dc8cff6403ab9", "0d6dc8cff6403ab9", "ACCOUNT", False),
     ("<total_tokens>14987873 tokens left</total_tokens>", "14987873", "ACCOUNT", False),
-    ("-rw-r--r--  1 dev  staff  66060825 Oct 26 00:40 Sotto.dmg", "66060825", "ACCOUNT", False),
+    ("-rw-r--r--  1 dev  staff  66060825 Oct 26 00:40 Keepmum.dmg", "66060825", "ACCOUNT", False),
     ('"f1": 0.9187279151943463', "9187279151943463", "ACCOUNT", False),
     ("wire it to account 48213907 today", "48213907", "ACCOUNT", True),
     ("card 4111 1111 1111 1111 exp 04/29", "4111 1111 1111 1111", "ACCOUNT", True),
@@ -203,7 +203,7 @@ def test_model_account_spans_after_a_secret_keyword_are_secrets(rules, text, val
 
 
 def test_username_in_a_path_is_not_a_person(rules):
-    text = "Working directory: /Users/alex/sotto-test"
+    text = "Working directory: /Users/alex/keepmum-test"
     a = text.index("/alex")
     pf = _FakePF([Span(a, a + 5, "PERSON", 0.9, "pf")])
     assert Pipeline(rules, pf, pii=True).detect(text) == []

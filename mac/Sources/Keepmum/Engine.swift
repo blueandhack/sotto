@@ -2,13 +2,13 @@ import Foundation
 import Observation
 import ServiceManagement
 
-/// The engine bundled in Sotto.app (bundle-runtime.sh): sotto's Python runtime, pf-serve, and the
-/// background service that runs `sotto serve`. Everything goes through the bundled `sotto`
+/// The engine bundled in Keepmum.app (bundle-runtime.sh): keepmum's Python runtime, pf-serve, and the
+/// background service that runs `keepmum serve`. Everything goes through the bundled `keepmum`
 /// command, so the app and the CLI share one implementation of setup and protection.
 @MainActor
 @Observable
 final class Engine {
-    /// `sotto status --json`.
+    /// `keepmum status --json`.
     struct Status: Decodable, Equatable {
         struct Protect: Decodable, Equatable {
             var settings: String?
@@ -29,7 +29,7 @@ final class Engine {
         var pii: Bool?
         var pass: [String]?
         var rules: Rules?
-        /// Per coding agent: claude, codex, pi, opencode (`sotto protect status`).
+        /// Per coding agent: claude, codex, pi, opencode (`keepmum protect status`).
         var clients: [String: Client]?
     }
 
@@ -37,9 +37,9 @@ final class Engine {
         var installed: Bool?
         var on: Bool?
         var error: String?
-        /// On, but some of its traffic still goes around sotto (opencode 1.x with a ChatGPT login).
+        /// On, but some of its traffic still goes around keepmum (opencode 1.x with a ChatGPT login).
         var warning: String?
-        /// Another gateway the user set for this tool: sotto leaves it alone.
+        /// Another gateway the user set for this tool: keepmum leaves it alone.
         var other: OtherValue?
 
         /// Codex reports one provider name, pi and opencode a list of provider names.
@@ -53,7 +53,7 @@ final class Engine {
         }
     }
 
-    /// `[rules] mask` and the allowlist, as `sotto status` reports them.
+    /// `[rules] mask` and the allowlist, as `keepmum status` reports them.
     struct Rules: Decodable, Equatable {
         struct Mask: Decodable, Equatable, Identifiable {
             var name: String
@@ -64,11 +64,11 @@ final class Engine {
         var mask: [Mask] = []
         var allowStrings: [String] = []
         var allowPatterns: [String] = []
-        /// Built-in rules turned off (`sotto rules off`).
+        /// Built-in rules turned off (`keepmum rules off`).
         var off: [String] = []
     }
 
-    /// A project sent straight to the API, around sotto (`sotto exclude`).
+    /// A project sent straight to the API, around keepmum (`keepmum exclude`).
     struct Excluded: Decodable, Equatable, Identifiable {
         var path: String
         var url: String
@@ -85,15 +85,15 @@ final class Engine {
     /// The menu bar asks the dashboard to open on Settings, where Setup is.
     var settingsRequested = false
 
-    /// Contents/Resources/sotto. Missing when the app was built without the engine (SKIP_RUNTIME).
-    let cli = Bundle.main.url(forResource: "sotto", withExtension: nil)
-    private let service = SMAppService.agent(plistName: "dev.sotto.agent.plist")
+    /// Contents/Resources/keepmum. Missing when the app was built without the engine (SKIP_RUNTIME).
+    let cli = Bundle.main.url(forResource: "keepmum", withExtension: nil)
+    private let service = SMAppService.agent(plistName: "app.keepmum.agent.plist")
     private var task: Task<Void, Never>?
 
     private(set) var previewing = false
     var isBundled: Bool { cli != nil || previewing }
     var hasModel: Bool { status?.model != nil }
-    /// The model is wanted (`sotto model on`, the default), or the rules work alone.
+    /// The model is wanted (`keepmum model on`, the default), or the rules work alone.
     var modelOn: Bool { status?.modelOn ?? true }
     /// Enough to scan: the model downloaded, or the rules alone.
     var canScan: Bool { hasModel || !modelOn }
@@ -123,7 +123,7 @@ final class Engine {
         if let s = try? decoder.decode(Status.self, from: Data(out.stdout.utf8)) { status = s }
     }
 
-    /// `sotto setup`: the model, once, with progress from its "NN% of 1.6 GB" lines.
+    /// `keepmum setup`: the model, once, with progress from its "NN% of 1.6 GB" lines.
     func downloadModel() async {
         await act {
             self.download = 0
@@ -176,7 +176,7 @@ final class Engine {
     /// The result of the last exclude or include, for the card to show.
     var exclusionNote: String?
 
-    /// Observe only (`sotto observe on`): count, but send requests unmasked. Running proxies
+    /// Observe only (`keepmum observe on`): count, but send requests unmasked. Running proxies
     /// pick it up on their next request.
     func setObserve(_ on: Bool) async {
         await act {
@@ -185,7 +185,7 @@ final class Engine {
         }
     }
 
-    /// The rules alone, or the rules and the local model (`sotto model`). Turning the model on
+    /// The rules alone, or the rules and the local model (`keepmum model`). Turning the model on
     /// downloads it first if needed. Running proxies pick it up on their next request.
     func setModel(_ on: Bool) async {
         if on && !hasModel {
@@ -199,7 +199,7 @@ final class Engine {
         }
     }
 
-    // MARK: What gets masked (`sotto types`, `sotto rules`)
+    // MARK: What gets masked (`keepmum types`, `keepmum rules`)
 
     /// Let a type through unmasked, or mask it again. Secrets need `confirmed`.
     func setPass(_ type: String, _ pass: Bool, confirmed: Bool = false) async {
@@ -223,7 +223,7 @@ final class Engine {
         await act { try await self.check(["rules", off ? "off" : "on", rule] + (confirmed ? ["--yes"] : [])) }
     }
 
-    /// kind: mask, allow or allow-pattern; index as `sotto rules list` numbers them.
+    /// kind: mask, allow or allow-pattern; index as `keepmum rules list` numbers them.
     func removeRule(_ kind: String, _ index: Int) async {
         await act { try await self.check(["rules", "remove", kind, String(index)]) }
     }
@@ -275,13 +275,13 @@ final class Engine {
         var stdout: String
         var stderr: String
         var lastLine: String {
-            stderr.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).last.map(String.init) ?? "sotto exited with \(code)"
+            stderr.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).last.map(String.init) ?? "keepmum exited with \(code)"
         }
     }
 
-    /// Run the bundled `sotto` off the main thread. `onLine` sees stderr lines as they arrive.
+    /// Run the bundled `keepmum` off the main thread. `onLine` sees stderr lines as they arrive.
     private func run(_ args: [String], onLine: (@Sendable (String) -> Void)? = nil) async throws -> Output {
-        guard let cli else { throw EngineError("This copy of Sotto has no bundled engine.") }
+        guard let cli else { throw EngineError("This copy of Keepmum has no bundled engine.") }
         return try await Task.detached {
             let p = Process()
             p.executableURL = cli
@@ -311,8 +311,8 @@ final class Engine {
     static func preview() -> Engine {
         let e = Engine()
         e.previewing = true
-        e.status = Status(model: "~/.local/share/sotto/models/privacy-filter-q8.gguf", modelSize: 1_637_572_192,
-                          pfServe: "Sotto.app/Contents/Resources/bin/pf-serve",
+        e.status = Status(model: "~/.local/share/keepmum/models/privacy-filter-q8.gguf", modelSize: 1_637_572_192,
+                          pfServe: "Keepmum.app/Contents/Resources/bin/pf-serve",
                           protect: .init(settings: "~/.claude/settings.json", on: true, baseUrl: "http://127.0.0.1:7788"),
                           port: 7788, serveRunning: true,
                           excluded: [.init(path: "~/Projects/open-source-docs", url: "https://api.anthropic.com", active: true)],

@@ -1,5 +1,5 @@
 [project]
-name = "sotto"
+name = "keepmum"
 version = "0.0.1"
 description = "Local secret and PII redaction proxy for Claude Code"
 readme = "README.md"
@@ -15,9 +15,9 @@ dependencies = [
 ]
 
 [project.scripts]
-sotto = "sotto.cli:app"
+keepmum = "keepmum.cli:app"
 # For editors that launch Claude Code through a wrapper (VS Code: claudeCode.claudeProcessWrapper).
-sotto-claude-wrapper = "sotto.launch:wrap_main"
+keepmum-claude-wrapper = "keepmum.launch:wrap_main"
 
 [dependency-groups]
 dev = [

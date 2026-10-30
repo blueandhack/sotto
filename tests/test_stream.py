@@ -7,13 +7,13 @@ import anyio
 import httpx
 import pytest
 
-from sotto import selftest
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.proxy import Proxy
-from sotto.redact import Redactor
-from sotto.restore import StreamRestorer, restore_response
-from sotto.vault import Vault
+from keepmum import selftest
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.proxy import Proxy
+from keepmum.redact import Redactor
+from keepmum.restore import StreamRestorer, restore_response
+from keepmum.vault import Vault
 
 SALT = bytes(range(32))
 
@@ -23,7 +23,7 @@ def make_vault():
     # Synthetic values. One contains quotes and backslashes to test JSON escaping.
     p_short = v.placeholder("SECRET", 'Xk2"9f\\Lq8vPz')
     # Force a 12-digit placeholder for a second value.
-    short = "SOTTO_SECRET_" + hmac.new(SALT, b"SECRET\0Rt5mQ2wZ", hashlib.sha256).hexdigest()[:8]
+    short = "KEEPMUM_SECRET_" + hmac.new(SALT, b"SECRET\0Rt5mQ2wZ", hashlib.sha256).hexdigest()[:8]
     v._values.setdefault(short, "someone else")
     p_long = v.placeholder("SECRET", "Rt5mQ2wZ")
     p_name = v.placeholder("PERSON", "Ada Lovelace")
@@ -105,7 +105,7 @@ def restore_stream(vault, stream: bytes, cuts) -> bytes:
 def case():
     vault, p_short, p_long, p_name = make_vault()
     text = (f"Set it to {p_short} and call {p_name}. The other is {p_long}abc. "
-            f"Literal SOTTO_SEC stays, so does SOTTO_SECRET_zz and {p_short}0123 ends")
+            f"Literal KEEPMUM_SEC stays, so does KEEPMUM_SECRET_zz and {p_short}0123 ends")
     tool = json.dumps({"file_path": "/tmp/.env", "content": f"TOKEN={p_short}\nOWNER={p_name}\n"})
     fetch = json.dumps({"url": f"https://example.com/?t={p_short}"})
     thinking = f"the user wants {p_short} rotated"
@@ -125,7 +125,7 @@ def test_expected_restore_is_what_we_think(case):
     vault, _, expected, _, _, p_short = case
     text, write, fetch, thinking = expected["content"][1], expected["content"][2], expected["content"][3], expected["content"][0]
     assert 'Xk2"9f\\Lq8vPz' in text["text"] and "Ada Lovelace" in text["text"] and "Rt5mQ2wZabc" in text["text"]
-    assert "SOTTO_SEC stays" in text["text"] and "SOTTO_SECRET_zz" in text["text"]
+    assert "KEEPMUM_SEC stays" in text["text"] and "KEEPMUM_SECRET_zz" in text["text"]
     assert write["input"]["content"] == 'TOKEN=Xk2"9f\\Lq8vPz\nOWNER=Ada Lovelace\n'
     assert p_short in fetch["input"]["url"]  # WebFetch keeps the placeholder
     assert p_short in thinking["thinking"]  # signed thinking is untouched

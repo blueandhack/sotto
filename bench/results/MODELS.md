@@ -17,7 +17,7 @@ Secrets, default config (`pii = false`), behind L1 rules:
 | CredSweeper (rules + ML), added to rules + Privacy Filter | 0.989 / 1.000 | 2/40 / 3/15 | 109 ms | +0.1 GB |
 
 - **GLiNER2-PII and NVIDIA GLiNER-PII** are the best published PII models. Behind our rules, their secret precision is higher (0.88–0.90 held-out). But they flag 40–47% of hard negatives (placeholders, hashes, IDs) and are 20–40× slower. Their encoders take about 384 words at a time, so long inputs need chunking, and they run on PyTorch with no MLX port. For personal data alone, GLiNER2 has the best PII precision (0.66 vs 0.62) but flags 57% of negatives, against 17% for Privacy Filter.
-- **The Nemotron fine-tune** is better at people, phones and addresses (precision 0.97–1.00), worse at secrets (precision 0.18 alone), and misses most dates. It trades secret quality for PII granularity, which is the wrong trade for sotto.
+- **The Nemotron fine-tune** is better at people, phones and addresses (precision 0.97–1.00), worse at secrets (precision 0.18 alone), and misses most dates. It trades secret quality for PII granularity, which is the wrong trade for keepmum.
 - **CredSweeper** is fast (0.1 ms p50, 224 MB) and drops placeholders well. It adds no recall over our rules and Privacy Filter, but flags UUIDs as secrets (precision 0.12 in the pipeline). It isn't worth the dependency.
 
 **Verdict:** keep OpenAI Privacy Filter on MLX. Nothing local beats it on the combination that matters here: secret recall, hard-negative noise and latency. The best upgrade to try later is a small-PII-model fallback (GLiNER2) only for the `pii = true` path, if users ask for more PII precision.
@@ -41,7 +41,7 @@ Findings:
   - *Zero-shot and few-shot* are cautious and clear only 3% of secret false positives.
   - *Content-tagging mode and reasoning first* make it clear most spans, including real secrets: 21–69 leaked per 100.
   - *Batching* is cheaper per span, but in 47 cases the model didn't answer for every numbered span.
-- **The best Apple setting** is general use case, few-shot, greedy, one span per call, a fresh session each time, and the permissive guardrail mode. Even so, it is only marginally useful. (Since dropped: the Apple judge was removed from sotto after this benchmark.)
+- **The best Apple setting** is general use case, few-shot, greedy, one span per call, a fresh session each time, and the permissive guardrail mode. Even so, it is only marginally useful. (Since dropped: the Apple judge was removed from keepmum after this benchmark.)
 - **Qwen3-4B on MLX beats the Apple model** on every axis: no leaks, more false positives cleared, and lower latency. It costs a 2.3 GB download and memory.
 - **No judge comes close to the refinement rules.** The deterministic refinement removed 88% of false positives (207 → 25 on the dev set) with no recall loss, in microseconds. Rules are the right tool for "is this a UUID or a placeholder"; LLM judges aren't.
 - **Custom adapters** (LoRA on the Apple model) could change the picture, but today they are Swift-only and need Apple's adapter-training entitlement. Neither the Python SDK (0.2.1) nor the `fm` CLI can load one.
@@ -49,7 +49,7 @@ Findings:
 **Verdict:**
 - **Keep the Apple model off the request path.** That includes judging spans: it can't clear false positives without leaking.
 - **Where it can still earn its place:** jobs where a wrong answer can't leak anything:
-  - explaining findings in `sotto scan` and `sotto doctor`,
+  - explaining findings in `keepmum scan` and `keepmum doctor`,
   - suggesting allowlist entries for the user to approve,
   - adding, never removing, spans in a slow offline audit of transcripts.
 - **If a judge is wanted later,** use Qwen3-4B on MLX, opt-in only, for the `pii = true` path. That is where false positives are most frequent (17–27% of negatives flagged).
@@ -62,7 +62,7 @@ Findings:
 
 ## 3. Personal-data precision (added later on Oct 25)
 
-How to read it: **precision** is the share of flagged values that really were personal data. At 0.55, almost half of what sotto redacted with `pii = true` was unnecessary. Those values were mostly request IDs tagged as account numbers, log timestamps tagged as dates, and API paths tagged as URLs, which are exactly what Claude needs to read logs. **Recall** is the share of real personal data caught. A recall loss is a leak.
+How to read it: **precision** is the share of flagged values that really were personal data. At 0.55, almost half of what keepmum redacted with `pii = true` was unnecessary. Those values were mostly request IDs tagged as account numbers, log timestamps tagged as dates, and API paths tagged as URLs, which are exactly what Claude needs to read logs. **Recall** is the share of real personal data caught. A recall loss is a leak.
 
 Raw tables: [`pii-refine-dev.md`](pii-refine-dev.md), [`pii-refine-holdout.md`](pii-refine-holdout.md). Personal-data types only (dev / held-out):
 

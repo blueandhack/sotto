@@ -12,18 +12,18 @@ uv run python bench/run.py --detectors rules,rules+pf-serve  # a subset; --data,
 Held-out checks use new values and hand-written negatives never used for tuning:
 
 ```sh
-uv run python bench/gen.py --seed 11 --negatives holdout4 --out /tmp/sotto-holdout4
-uv run python bench/run.py --data /tmp/sotto-holdout4
+uv run python bench/gen.py --seed 11 --negatives holdout4 --out /tmp/keepmum-holdout4
+uv run python bench/run.py --data /tmp/keepmum-holdout4
 ```
 
 Earlier sets: `--seed 8 --negatives holdout`, `--seed 9 --negatives holdout2`, `--seed 10 --negatives holdout3`, and `--seed 12 --negatives holdout5` (shaped like the personal-data, flag and prose rules). Each was written before its first run; `results/PFSERVE.md`, `results/PHASE0.md` and `results/RULES.md` say which have been tuned on since.
 
-- `rules` runs the pipeline without a model, as sotto does with `detect.model = false`; `rules:pii` adds personal data.
+- `rules` runs the pipeline without a model, as keepmum does with `detect.model = false`; `rules:pii` adds personal data.
 - `extra.jsonl` holds the formats added in Oct 2026: more provider keys, secrets in flags, prose and config files, and personal data the rules find. It is generated after the other files, so they stay as they were for a given seed.
 
 - `secrets.jsonl`, `pii.jsonl`, `long.jsonl` and `extra.jsonl` are generated: random values in provider formats. They are not committed, because provider-shaped strings trip GitHub push protection even when fake.
 - `negatives.jsonl` comes from the hand-written lists in `negatives.py`.
-- `pf-serve` is found where sotto finds it (`SOTTO_PF_SERVE` and `SOTTO_PF_MODEL` override): run `native/pf-serve/build.sh` and `sotto setup` first.
+- `pf-serve` is found where keepmum finds it (`KEEPMUM_PF_SERVE` and `KEEPMUM_PF_MODEL` override): run `native/pf-serve/build.sh` and `keepmum setup` first.
 - Detection runs offline (`HF_HUB_OFFLINE=1`); models must already be downloaded.
 
 ## Earlier candidates

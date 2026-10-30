@@ -26,5 +26,5 @@ jobs:
       # The whole app with its bundled engine, signed ad-hoc: catches bundling breakage on every change.
       - run: ./build-app.sh
         working-directory: mac
-      - run: build/Sotto.app/Contents/Resources/sotto --help
+      - run: build/Keepmum.app/Contents/Resources/keepmum --help
         working-directory: mac

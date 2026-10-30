@@ -2,7 +2,7 @@
 
 Oct 29, 2026 · Apple M5 Pro, 64 GB, macOS 27.2. Raw tables: before [`rules-before-dev.md`](rules-before-dev.md), [`rules-before-holdout5.md`](rules-before-holdout5.md); after [`rules-dev.md`](rules-dev.md), [`rules-holdout5.md`](rules-holdout5.md).
 
-The change: 69 more rules (96 in all), and `detect.model = false` (`sotto model off`), which runs the rules without the model.
+The change: 69 more rules (96 in all), and `detect.model = false` (`keepmum model off`), which runs the rules without the model.
 
 - **Provider keys (52).** Formats from gitleaks (`config/gitleaks.toml` at `5f6ec56`, Oct 23, 2026) and TruffleHog's detectors (Groq, xAI, OpenRouter, Replicate, Supabase, Docker Hub, LangSmith), each with a prefix that makes it safe to match on its own: AI providers, package registries, cloud and CI tokens, Vault, 1Password, age.
 - **Secrets in context (11).** Command-line flags named for a secret (`--token X`, `--password=X`), `curl -u user:password`, a password or key in a sentence ("the staging API key is X"), `.netrc`, Docker's `config.json`, `.npmrc` `_auth`, kubeconfig `client-key-data`, Azure storage keys, presigned URL signatures, session cookies.
@@ -13,7 +13,7 @@ Two new data sets:
 - `extra.jsonl` (54 records, generated after the other files so they stay as they were): the new provider formats with no telling variable name, secrets in flags, prose and config files, and personal data in shapes the rules target.
 - Held-out 5 (seed 12, `HOLDOUT5_NEGATIVES`): 15 hard negatives written before the rules. They are shaped like the new patterns: git remotes, `icon@2x.png`, `x@self.weight`, `user:${PASSWORD}@host`, versions and IPs, numbers that look like phones, invalid SSNs, a DOB validation message, `--password-stdin` and `--token-file`, keys in prose that are identifiers.
 
-`bench/run.py`'s `rules` detector now runs the pipeline with no model, as sotto does with the model off. It used to run the bare detector, without the personal-data noise checks.
+`bench/run.py`'s `rules` detector now runs the pipeline with no model, as keepmum does with the model off. It used to run the bare detector, without the personal-data noise checks.
 
 ## Secrets (`pii = false`)
 
@@ -42,7 +42,7 @@ The rules alone find every email, phone number, card number, IBAN, SSN and date 
 The first run of held-out 5 flagged three negatives with the rules alone. Fixing them means held-out 5 is now tuned on:
 
 - `scp … deploy@build-01.acme.dev:/srv`: the email rule backtracked to `deploy@build-01.acme`. An address can no longer end before a dot and more of a host name.
-- `noreply@github.com` and a fictional 555-01xx number: the benchmark's `rules` ran without the noise checks (above), so these were the benchmark's error, not sotto's.
+- `noreply@github.com` and a fictional 555-01xx number: the benchmark's `rules` ran without the noise checks (above), so these were the benchmark's error, not keepmum's.
 
 Dev's `To: support@acme-shop.com` (a role mailbox) and an address the email rule found inside a password in a connection string (an address must now start after a space, a quote, a bracket, `=`, `,` or `mailto:`) were fixed on dev.
 

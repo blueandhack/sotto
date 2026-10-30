@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Projects where Claude Code skips sotto and goes straight to the API (`sotto exclude`).
+/// Projects where Claude Code skips keepmum and goes straight to the API (`keepmum exclude`).
 struct ExclusionsCard: View {
     var engine: Engine
 
@@ -13,7 +13,7 @@ struct ExclusionsCard: View {
             let list = engine.status?.excluded ?? []
             VStack(alignment: .leading, spacing: 0) {
                 if list.isEmpty {
-                    Text("None. Every project goes through sotto.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                    Text("None. Every project goes through keepmum.").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 }
                 ForEach(list) { p in
                     HStack(spacing: 10) {
@@ -21,7 +21,7 @@ struct ExclusionsCard: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(display(p.path)).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.text)
                                 .lineLimit(1).truncationMode(.middle)
-                            Text(p.active ? "→ \(p.url)" : "setting removed by hand: goes through sotto")
+                            Text(p.active ? "→ \(p.url)" : "setting removed by hand: goes through keepmum")
                                 .font(.system(size: 11)).foregroundStyle(Theme.secondary).lineLimit(1)
                         }
                         Spacer(minLength: 8)
@@ -47,7 +47,7 @@ struct ExclusionsCard: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Exclude"
-        panel.message = "Claude Code in this project (its git repository) will skip sotto and send everything to the API unscanned."
+        panel.message = "Claude Code in this project (its git repository) will skip keepmum and send everything to the API unscanned."
         if panel.runModal() == .OK, let url = panel.url {
             Task { await engine.exclude(url) }
         }
@@ -62,7 +62,7 @@ struct ModeCard: View {
 
     var body: some View {
         let on = engine.status?.observe ?? observing
-        Card(title: "Mode", subtitle: on ? "Observe only: requests go out unmasked; sotto counts what it would mask"
+        Card(title: "Mode", subtitle: on ? "Observe only: requests go out unmasked; keepmum counts what it would mask"
                                          : "Mask: sensitive values are replaced before requests leave this Mac") {
             Segmented(options: [(false, "Mask"), (true, "Observe only")],
                       selection: Binding(get: { on }, set: { new in Task { await engine.setObserve(new) } }))
@@ -71,7 +71,7 @@ struct ModeCard: View {
     }
 }
 
-/// The rules alone, or the rules and the local model (`sotto model`).
+/// The rules alone, or the rules and the local model (`keepmum model`).
 struct DetectorCard: View {
     var engine: Engine
     /// From the running proxy's feed: the model was asked for but did not load, and why.

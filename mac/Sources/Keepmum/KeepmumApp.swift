@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct SottoApp: App {
+struct KeepmumApp: App {
     @State private var store = StatsStore()
     @State private var engine = Engine()
 
@@ -18,7 +18,7 @@ struct SottoApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("sotto", id: "dashboard") {
+        Window("keepmum", id: "dashboard") {
             Dashboard(store: store, engine: engine)
                 .frame(minWidth: 1100, minHeight: 720)
                 .onAppear { store.start(); engine.start() }
@@ -52,8 +52,8 @@ struct MenuPanel: View {
         let s = store.snapshot
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                SottoBadge(size: 24)
-                Text("sotto").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
+                KeepmumBadge(size: 24)
+                Text("keepmum").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.text)
                 Spacer()
                 StatusDot(connection: store.connection)
             }
@@ -76,7 +76,7 @@ struct MenuPanel: View {
                 NSApp.activate()
             }
             if case .offline(let reason) = store.connection {
-                Text("\(reason). \(engine.isBundled ? "Start the background service in Setup." : "Run sotto claude to start.")")
+                Text("\(reason). \(engine.isBundled ? "Start the background service in Setup." : "Run keepmum claude to start.")")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.secondary)
             }
             HStack(spacing: 8) {
@@ -108,9 +108,9 @@ struct MenuPanel: View {
 }
 
 /// Renders the app to PNGs and exits, to check the design without a screen.
-///   `Sotto --snapshot dir`         every page in light and dark, with preview data
-///   `Sotto --snapshot dir --live`  the overview from the running sotto's stats feed
-///   `Sotto --icon dir`             the app icon at every size iconutil needs
+///   `Keepmum --snapshot dir`         every page in light and dark, with preview data
+///   `Keepmum --snapshot dir --live`  the overview from the running keepmum's stats feed
+///   `Keepmum --icon dir`             the app icon at every size iconutil needs
 @MainActor
 enum Snapshotter {
     static func runIfRequested() {
@@ -182,7 +182,7 @@ enum Snapshotter {
     }
 }
 
-/// The app icon: the sotto mark (a line of text with a word masked) on an indigo squircle.
+/// The app icon: the keepmum mark (a speech bubble with a word masked) on an indigo squircle.
 struct AppIcon: View {
     var body: some View {
         ZStack {
@@ -193,8 +193,8 @@ struct AppIcon: View {
             RoundedRectangle(cornerRadius: 230, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.12), lineWidth: 4)
                 .padding(100)
-            SottoMark(color: .white)
-                .frame(width: 560, height: 560)
+            KeepmumMark(color: .white)
+                .frame(width: 600, height: 600)
                 .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
         }
         .frame(width: 1024, height: 1024)

@@ -1,4 +1,4 @@
-"""~/.config/sotto/config.toml. Every key is optional; unknown keys and bad values are errors.
+"""~/.config/keepmum/config.toml. Every key is optional; unknown keys and bad values are errors.
 
     [server]
     port = 7788
@@ -12,7 +12,7 @@
 
     [rules]                # your own patterns, always masked (Python regex; group 1 if present)
     mask = [{ name = "Employee ID", pattern = "EMP-\\d{6}", type = "ACCOUNT" }]
-    off = []               # built-in rules turned off, by name, e.g. ["key-in-prose"] (`sotto rules builtin`)
+    off = []               # built-in rules turned off, by name, e.g. ["key-in-prose"] (`keepmum rules builtin`)
 
     [allowlist]            # added to the built-in allowlist, never replacing it
     strings = []
@@ -71,8 +71,8 @@ class Config:
 
 
 def config_file() -> Path:
-    """~/.config/sotto/config.toml, for the current HOME."""
-    return Path.home() / ".config" / "sotto" / "config.toml"
+    """~/.config/keepmum/config.toml, for the current HOME."""
+    return Path.home() / ".config" / "keepmum" / "config.toml"
 
 
 def load(path: Path | None = None) -> Config:
@@ -130,7 +130,7 @@ def load(path: Path | None = None) -> Config:
     cfg.off_rules = [str(r) for r in rules.get("off", [])]
     for r in cfg.off_rules:
         if r not in builtin_rules():
-            raise ConfigError(f"{path}: rules.off: no built-in rule {r!r} (`sotto rules builtin` lists them)")
+            raise ConfigError(f"{path}: rules.off: no built-in rule {r!r} (`keepmum rules builtin` lists them)")
     cfg.allow_strings = [str(s) for s in allow.get("strings", [])]
     cfg.allow_patterns = [str(p) for p in allow.get("patterns", [])]
     for p in cfg.allow_patterns:
@@ -153,7 +153,7 @@ def load(path: Path | None = None) -> Config:
 
 
 def toml_value(value) -> str:
-    """One-line TOML for the values sotto writes: bool, int, str, and lists of them or of tables.
+    """One-line TOML for the values keepmum writes: bool, int, str, and lists of them or of tables.
     A JSON string is a valid TOML basic string."""
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -170,7 +170,7 @@ def toml_value(value) -> str:
 
 def set_value(section: str, key: str, value, path: Path | None = None) -> None:
     """Set one key in one section, keeping the rest of the file as written. The result must
-    load cleanly, or the file is left as it was. Values sotto writes are one line each."""
+    load cleanly, or the file is left as it was. Values keepmum writes are one line each."""
     path = path or config_file()
     text = path.read_text() if path.exists() else ""
     line = f"{key} = {toml_value(value)}"

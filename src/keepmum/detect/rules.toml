@@ -1,4 +1,4 @@
-# sotto default L1 rules (gitleaks-style).
+# keepmum default L1 rules (gitleaks-style).
 #
 # Each [[rule]] is a regex. `group` selects the capture group that holds the secret
 # (0 = whole match). `keywords` is a cheap case-insensitive prefilter: the regex only
@@ -24,9 +24,9 @@ strings = [
   "4242424242424242", "4242 4242 4242 4242",
   "4111111111111111", "4111 1111 1111 1111",
 ]
-# Full-match regexes. sotto's own placeholders must never be re-redacted.
+# Full-match regexes. keepmum's own placeholders must never be re-redacted.
 patterns = [
-  '''SOTTO_[A-Z]+_[0-9a-f]{8,12}''',
+  '''KEEPMUM_[A-Z]+_[0-9a-f]{8,12}''',
   # Stripe publishable keys are public by design.
   '''pk_(?:test|live)_[A-Za-z0-9]{10,247}''',
   # Claude Code's own vocabulary: the model reads product names as people.

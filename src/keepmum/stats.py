@@ -15,9 +15,9 @@ from collections import Counter, deque
 from pathlib import Path
 from urllib.parse import urlsplit
 
-TOKEN_FILE = Path.home() / ".config" / "sotto" / "stats-token"
+TOKEN_FILE = Path.home() / ".config" / "keepmum" / "stats-token"
 # Every request's event (counts only), kept across restarts for the app's Activity page.
-HISTORY_FILE = Path.home() / ".config" / "sotto" / "history.jsonl"
+HISTORY_FILE = Path.home() / ".config" / "keepmum" / "history.jsonl"
 HISTORY_KEEP = 20_000  # events kept when the file is compacted
 
 
@@ -34,7 +34,7 @@ def stats_token(path: Path = TOKEN_FILE) -> str:
 
 
 class History:
-    """An append-only JSONL file of events, shared by every sotto process on this Mac (0600).
+    """An append-only JSONL file of events, shared by every keepmum process on this Mac (0600).
     Lines are small, so appends from several processes do not interleave."""
 
     def __init__(self, path: Path = HISTORY_FILE, keep: int = HISTORY_KEEP):
@@ -97,7 +97,7 @@ class History:
         return out
 
 
-# Coding agents sotto can tell apart by their User-Agent: (prefix, id, name).
+# Coding agents keepmum can tell apart by their User-Agent: (prefix, id, name).
 CLIENTS = (
     ("claude-cli", "claude-code", "Claude Code"),
     ("claude-code", "claude-code", "Claude Code"),
@@ -107,7 +107,7 @@ CLIENTS = (
     ("opencode", "opencode", "opencode"),
 )
 PROVIDERS = {"anthropic": "Anthropic", "openai": "OpenAI"}
-# Events from before sotto recorded clients came from Claude Code, the only client it served.
+# Events from before keepmum recorded clients came from Claude Code, the only client it served.
 DEFAULT_CLIENT = "claude-code"
 
 
@@ -135,7 +135,7 @@ def provider_of(upstream: str) -> str:
 
 def flows(events, since: float) -> dict:
     """Totals for the app's flow diagram over events newer than `since`: requests from each
-    client through sotto's result to each provider, and replies back through restore."""
+    client through keepmum's result to each provider, and replies back through restore."""
     out, back = Counter(), Counter()
     values, unresolved = Counter(), 0
     for e in events:

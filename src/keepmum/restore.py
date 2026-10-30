@@ -10,7 +10,7 @@ from .vault import PLACEHOLDER, Vault
 
 # Per tool: "restore" puts real values into the tool's input before it runs locally; "keep"
 # leaves placeholders, so a prompt-injected request cannot send a real value over the network.
-# MCP tools keep placeholders because sotto cannot tell which ones reach the network.
+# MCP tools keep placeholders because keepmum cannot tell which ones reach the network.
 DEFAULT_POLICY = {
     "default": "restore",
     "WebFetch": "keep",
@@ -29,7 +29,7 @@ def tool_policy(name: str, policy: dict[str, str]) -> str:
 
 
 # Key in the counts Counter for placeholders the vault does not know: the model reused one this
-# process never made (another sotto with another salt, or one restarted since). They stay as
+# process never made (another keepmum with another salt, or one restarted since). They stay as
 # they are, and the proxy reports them.
 UNRESOLVED = "unresolved"
 
@@ -89,7 +89,7 @@ def restore_response(body: dict, vault: Vault, policy: dict[str, str] = DEFAULT_
 
 # --- Streaming (server-sent events) -------------------------------------------------
 
-_PREFIX = "SOTTO_"
+_PREFIX = "KEEPMUM_"
 _TYPE_TAILS = tuple(f"{t}_" for t in TYPES)
 _HEX = frozenset("0123456789abcdef")
 
@@ -116,7 +116,7 @@ def _hold_from(text: str) -> int:
     """Index from which text must be held back, or len(text) when it can all go out now."""
     longest = len(_PREFIX) + max(len(t) for t in _TYPE_TAILS) + 12
     for i in range(max(0, len(text) - longest), len(text)):
-        if text[i] == "S" and _could_be_placeholder_start(text[i:]):
+        if text[i] == _PREFIX[0] and _could_be_placeholder_start(text[i:]):
             return i
     return len(text)
 

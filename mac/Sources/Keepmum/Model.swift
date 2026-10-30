@@ -17,7 +17,7 @@ struct Detection: Decodable, Sendable {
     var sources: [String: Int] = [:]
     var rules: [Rule] = []
     var pass: [String] = []
-    /// The model is running. Nil from services older than `sotto model`.
+    /// The model is running. Nil from services older than `keepmum model`.
     var model: Bool?
     /// The model was asked for (detect.model) but did not load: why. The rules keep scanning.
     var modelError: String?
@@ -59,7 +59,7 @@ struct Detection: Decodable, Sendable {
     }
 }
 
-/// The stats feed from `GET /_sotto/stats`. Counts, types and timestamps only: the feed
+/// The stats feed from `GET /_keepmum/stats`. Counts, types and timestamps only: the feed
 /// never carries a sensitive value or a placeholder, so this app cannot show one.
 struct Snapshot: Decodable, Sendable {
     struct Funnel: Decodable, Sendable {
@@ -69,7 +69,7 @@ struct Snapshot: Decodable, Sendable {
         var withNew: Int?
         /// Scanned requests whose new text held nothing to mask.
         var clean: Int?
-        /// Placeholders in replies that sotto could not restore.
+        /// Placeholders in replies that keepmum could not restore.
         var unresolved: Int?
     }
     struct Minute: Decodable, Sendable, Identifiable {
@@ -99,7 +99,7 @@ struct Snapshot: Decodable, Sendable {
         var id: Double { ts }
 
         enum Kind: String, CaseIterable { case masked, clean, blocked, observed }
-        /// Matches `event_kind` in sotto's stats.py.
+        /// Matches `event_kind` in keepmum's stats.py.
         var kind: Kind {
             if outcome == "blocked" || outcome == "rejected" { return .blocked }
             if outcome == "observed" { return .observed }
@@ -124,15 +124,15 @@ struct Snapshot: Decodable, Sendable {
     var pii: Bool?
     var detector: String?
     var version: String?
-    /// Observe mode: requests go out unmasked; sotto only counts.
+    /// Observe mode: requests go out unmasked; keepmum only counts.
     var observe: Bool?
 
-    /// How sotto was started: `sotto claude`, `sotto serve`, or an editor's wrapper.
+    /// How keepmum was started: `keepmum claude`, `keepmum serve`, or an editor's wrapper.
     var modeLabel: String {
         switch mode {
-        case "claude": "sotto claude"
+        case "claude": "keepmum claude"
         case "vscode": "VS Code"
-        case "serve": "sotto serve"
+        case "serve": "keepmum serve"
         default: "—"
         }
     }
@@ -163,7 +163,7 @@ struct Pulse: Identifiable, Sendable {
     let born: Date
 }
 
-/// `GET /_sotto/flows`: totals over a time window for the two flow diagrams. Counts only.
+/// `GET /_keepmum/flows`: totals over a time window for the two flow diagrams. Counts only.
 struct Flows: Decodable, Sendable {
     struct Client: Decodable, Sendable { var id: String; var name: String; var sent: Int }
     struct Provider: Decodable, Sendable { var id: String; var name: String; var replies: Int }
@@ -209,7 +209,7 @@ final class StatsStore {
         }
     }
 
-    // MARK: Flows (the live flow diagrams): totals over a window, from sotto's history.
+    // MARK: Flows (the live flow diagrams): totals over a window, from keepmum's history.
 
     private(set) var flows = Flows()
     var flowWindow: Double = 3600 {
@@ -224,9 +224,9 @@ final class StatsStore {
             flows = SampleFeed.flows(window: flowWindow)
             return
         }
-        guard let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+        guard let token = try? String(contentsOf: home.appending(path: ".config/keepmum/stats-token"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_sotto/flows?window=\(Int(flowWindow))")!)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_keepmum/flows?window=\(Int(flowWindow))")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 4
         guard let (data, response) = try? await URLSession.shared.data(for: request),
@@ -239,31 +239,31 @@ final class StatsStore {
             apply(sample.next(), connection: .sample)
             return
         }
-        guard let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+        guard let token = try? String(contentsOf: home.appending(path: ".config/keepmum/stats-token"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty
         else {
-            connection = .offline("sotto has not run yet")
+            connection = .offline("keepmum has not run yet")
             return
         }
         port = discoverPort()
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_sotto/stats")!)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_keepmum/stats")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 2
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                connection = .offline("sotto refused the stats token")
+                connection = .offline("keepmum refused the stats token")
                 return
             }
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             apply(try decoder.decode(Snapshot.self, from: data), connection: .live)
         } catch {
-            connection = .offline("sotto is not running")
+            connection = .offline("keepmum is not running")
         }
     }
 
-    // MARK: Findings (the Logs page): what new text held, from sotto's memory.
+    // MARK: Findings (the Logs page): what new text held, from keepmum's memory.
 
     private(set) var findings: [Finding] = []
     /// [log] previews: the feed carries the first and last character of long values.
@@ -275,9 +275,9 @@ final class StatsStore {
             previewsOn = true
             return
         }
-        guard let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+        guard let token = try? String(contentsOf: home.appending(path: ".config/keepmum/stats-token"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_sotto/findings")!)
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/_keepmum/findings")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 4
         struct Page: Decodable { var findings: [Finding]; var previews: Bool? }
@@ -290,7 +290,7 @@ final class StatsStore {
         previewsOn = page.previews ?? true
     }
 
-    // MARK: History (the Activity page): older events from sotto's history file, paged.
+    // MARK: History (the Activity page): older events from keepmum's history file, paged.
 
     private(set) var history: [Snapshot.Event] = []
     private(set) var historyDone = false
@@ -305,9 +305,9 @@ final class StatsStore {
             return
         }
         if !more || kind != historyKind { history = []; historyDone = false; historyKind = kind }
-        guard !historyDone, let token = try? String(contentsOf: home.appending(path: ".config/sotto/stats-token"), encoding: .utf8)
+        guard !historyDone, let token = try? String(contentsOf: home.appending(path: ".config/keepmum/stats-token"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        var c = URLComponents(string: "http://127.0.0.1:\(port)/_sotto/history")!
+        var c = URLComponents(string: "http://127.0.0.1:\(port)/_keepmum/history")!
         c.queryItems = [URLQueryItem(name: "limit", value: "100")]
         if let last = history.last { c.queryItems!.append(URLQueryItem(name: "before", value: String(last.ts))) }
         if let kind { c.queryItems!.append(URLQueryItem(name: "kind", value: kind.rawValue)) }
@@ -329,10 +329,10 @@ final class StatsStore {
         return snapshot.recent.reversed().filter { $0.ts > newest && (kind == nil || $0.kind == kind) }
     }
 
-    /// The port of the running proxy: runtime.json (written by sotto claude/serve) or 7788.
+    /// The port of the running proxy: runtime.json (written by keepmum claude/serve) or 7788.
     private func discoverPort() -> Int {
         struct Runtime: Decodable { var pid: Int32; var port: Int }
-        if let data = try? Data(contentsOf: home.appending(path: ".config/sotto/runtime.json")),
+        if let data = try? Data(contentsOf: home.appending(path: ".config/keepmum/runtime.json")),
            let rt = try? JSONDecoder().decode(Runtime.self, from: data), kill(rt.pid, 0) == 0 {
             return rt.port
         }

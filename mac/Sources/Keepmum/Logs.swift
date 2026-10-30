@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One value sotto masked in new text (`GET /_sotto/findings`). Never the value: its type, the
+/// One value keepmum masked in new text (`GET /_keepmum/findings`). Never the value: its type, the
 /// rule that found it, its length, and for values of 8 or more characters the first and last one.
 struct Finding: Decodable, Sendable, Identifiable {
     var ts: Double
@@ -62,8 +62,8 @@ struct Finding: Decodable, Sendable, Identifiable {
     }()
 }
 
-/// Logs: every value sotto masked in new text, newest first, searchable. Kept in sotto's memory
-/// only, so the list starts empty after sotto restarts.
+/// Logs: every value keepmum masked in new text, newest first, searchable. Kept in keepmum's memory
+/// only, so the list starts empty after keepmum restarts.
 struct LogsPage: View {
     var store: StatsStore
     @State private var query = ""
@@ -74,10 +74,10 @@ struct LogsPage: View {
         let all = store.sampleMode ? Finding.samples : store.findings
         let shown = all.filter { (type == "ALL" || $0.type == type) && $0.matches(query) }
         VStack(spacing: 16) {
-            PageHeader(title: "Logs", subtitle: "What sotto masked in new text, newest first. Only the first and last character of a value, kept in memory until sotto exits.") {
+            PageHeader(title: "Logs", subtitle: "What keepmum masked in new text, newest first. Only the first and last character of a value, kept in memory until keepmum exits.") {
                 PreviewToggle(store: store)
             }
-            Card(title: "Masked values", subtitle: all.isEmpty ? "Nothing masked since sotto started" : "\(shown.count) of \(all.count)") {
+            Card(title: "Masked values", subtitle: all.isEmpty ? "Nothing masked since keepmum started" : "\(shown.count) of \(all.count)") {
                 HStack(spacing: 8) {
                     search
                     typePicker
@@ -97,7 +97,7 @@ struct LogsPage: View {
                         ScrollView { LazyVStack(spacing: 0) { ForEach(shown) { row($0) } } }
                     }
                     if shown.isEmpty {
-                        Text(all.isEmpty ? "Nothing yet. Values masked in new text appear here; the list starts empty each time sotto starts."
+                        Text(all.isEmpty ? "Nothing yet. Values masked in new text appear here; the list starts empty each time keepmum starts."
                                          : "No match")
                             .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)

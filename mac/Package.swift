@@ -2,9 +2,9 @@
 import PackageDescription
 
 let package = Package(
-    name: "Sotto",
+    name: "Keepmum",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "Sotto", path: "Sources/Sotto"),
+        .executableTarget(name: "Keepmum", path: "Sources/Keepmum"),
     ]
 )

@@ -5,12 +5,12 @@ import sys
 
 import pytest
 
-from sotto.detect import pfserve
-from sotto.detect.pfserve import PfServe, PfServeError
+from keepmum.detect import pfserve
+from keepmum.detect.pfserve import PfServe, PfServeError
 
 # A stand-in for pf-serve that speaks its protocol: it reports " Priya Raman" (with the leading
 # space a BPE token carries) as a person, "ghp_" tokens as secrets, and "kitten" with a label
-# sotto does not map. MODE selects a failure; "crash-once" crashes on its first request only.
+# keepmum does not map. MODE selects a failure; "crash-once" crashes on its first request only.
 FAKE = r'''#!{python}
 import json, os, re, struct, sys, time
 mode = "{mode}"
@@ -118,13 +118,13 @@ def test_a_hung_process_times_out(tmp_path, monkeypatch):
 
 
 def test_finds_the_binary_and_model(tmp_path, monkeypatch):
-    for k in ("SOTTO_PF_SERVE", "SOTTO_PF_MODEL"):
+    for k in ("KEEPMUM_PF_SERVE", "KEEPMUM_PF_MODEL"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     monkeypatch.setattr(pfserve, "MODEL_SIZE", 5)
     assert pfserve.find_binary() is None and pfserve.find_model() is None
-    binary = tmp_path / "data" / "sotto" / "bin" / "pf-serve"
+    binary = tmp_path / "data" / "keepmum" / "bin" / "pf-serve"
     binary.parent.mkdir(parents=True)
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
@@ -134,7 +134,7 @@ def test_finds_the_binary_and_model(tmp_path, monkeypatch):
     assert pfserve.find_binary() == binary and pfserve.find_model() == hf
     hf.write_bytes(b"1234")  # wrong size: an interrupted download
     assert pfserve.find_model() is None
-    monkeypatch.setenv("SOTTO_PF_MODEL", str(hf))
+    monkeypatch.setenv("KEEPMUM_PF_MODEL", str(hf))
     assert pfserve.find_model() == hf
 
 
@@ -159,7 +159,7 @@ class _Stream:
 def test_download_checks_size_and_hash(tmp_path, monkeypatch, served, ok):
     import httpx
 
-    monkeypatch.delenv("SOTTO_PF_MODEL", raising=False)
+    monkeypatch.delenv("KEEPMUM_PF_MODEL", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     monkeypatch.setattr(pfserve, "MODEL_SIZE", 8)

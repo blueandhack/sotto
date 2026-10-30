@@ -6,12 +6,12 @@ import anyio
 import httpx
 import pytest
 
-from sotto import selftest
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.proxy import Proxy
-from sotto.redact import Redactor
-from sotto.vault import Vault
+from keepmum import selftest
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.proxy import Proxy
+from keepmum.redact import Redactor
+from keepmum.vault import Vault
 
 API_KEY = "sk-ant-test-not-a-real-key"
 
@@ -48,7 +48,7 @@ def test_logs_never_hold_values_or_auth(caplog):
         anyio.run(go)
     text = caplog.text
     assert "redacted" in text  # the request was logged...
-    assert canary not in text and API_KEY not in text and "SOTTO_" not in text  # ...without values
+    assert canary not in text and API_KEY not in text and "KEEPMUM_" not in text  # ...without values
 
 
 def test_upstream_down_is_a_502_not_a_raw_send():
@@ -90,7 +90,7 @@ def test_bodyless_get_is_forwarded():
 def test_host_header(host, ok):
     async def go():
         _, client = make()
-        return await client.get("/_sotto/health", headers={"host": host})
+        return await client.get("/_keepmum/health", headers={"host": host})
 
     assert (anyio.run(go).status_code == 200) is ok
 
@@ -127,7 +127,7 @@ def test_a_request_is_clean_when_its_new_text_has_nothing_to_mask():
         # The secret pasted again in new text is new sensitive data, even though it is known.
         msgs = msgs + [{"role": "assistant", "content": "sure"}, {"role": "user", "content": f"again: {canary}"}]
         await client.post("/v1/messages", json={**first, "messages": msgs})
-        r = await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})
+        r = await client.get("/_keepmum/stats", headers={"authorization": "Bearer t"})
         return r.json()
 
     stats = anyio.run(go)
@@ -152,8 +152,8 @@ def test_observe_mode_counts_but_sends_the_request_unchanged():
         sent = json.dumps(body_with(canary)).encode()
         r1 = await client.post("/v1/messages", content=sent, headers={"content-type": "application/json"})
         r2 = await client.post("/v1/messages/count_tokens", content=b"not json")  # malformed: passed on, not rejected
-        r3 = await client.post("/v1/files", content=b"data")  # an endpoint sotto does not scan
-        stats = (await client.get("/_sotto/stats", headers={"authorization": "Bearer t"})).json()
+        r3 = await client.post("/v1/files", content=b"data")  # an endpoint keepmum does not scan
+        stats = (await client.get("/_keepmum/stats", headers={"authorization": "Bearer t"})).json()
         return mock, sent, (r1, r2, r3), stats
 
     mock, sent, responses, stats = anyio.run(go)
@@ -164,7 +164,7 @@ def test_observe_mode_counts_but_sends_the_request_unchanged():
 
 
 def test_observe_flag_is_read_per_request(tmp_path):
-    from sotto.config import ObserveFlag, set_detect_flag
+    from keepmum.config import ObserveFlag, set_detect_flag
 
     cfg = tmp_path / "config.toml"
     cfg.write_text("[server]\nport = 7788\n\n[detect]\npii = true\n")
@@ -189,7 +189,7 @@ def test_observe_flag_is_read_per_request(tmp_path):
 
 
 def test_history_survives_and_pages(tmp_path):
-    from sotto.stats import History, Stats
+    from keepmum.stats import History, Stats
 
     hist = History(tmp_path / "history.jsonl", keep=50)
     canary = selftest.make_canary()
@@ -207,11 +207,11 @@ def test_history_survives_and_pages(tmp_path):
         for i in range(4):
             await client.post("/v1/messages", json={"model": "m", "max_tokens": 8, "messages": [{"role": "user", "content": f"hi {i}"}]})
         client = make_with_history()  # a restart: a new process, the same file
-        h = lambda q: client.get(f"/_sotto/history{q}", headers={"authorization": "Bearer t"})
+        h = lambda q: client.get(f"/_keepmum/history{q}", headers={"authorization": "Bearer t"})
         first = (await h("?limit=3")).json()["events"]
         older = (await h(f"?limit=3&before={first[-1]['ts']}")).json()["events"]
         masked = (await h("?kind=masked")).json()["events"]
-        denied = await client.get("/_sotto/history")
+        denied = await client.get("/_keepmum/history")
         return first, older, masked, denied
 
     first, older, masked, denied = anyio.run(go)
@@ -219,13 +219,13 @@ def test_history_survives_and_pages(tmp_path):
     assert len(masked) == 1 and masked[0]["new"] > 0
     assert denied.status_code == 401
     text = (tmp_path / "history.jsonl").read_text()
-    assert canary not in text and "SOTTO_" not in text  # counts only
+    assert canary not in text and "KEEPMUM_" not in text  # counts only
     assert (tmp_path / "history.jsonl").stat().st_mode & 0o777 == 0o600
 
 
 
 def test_flows_follow_each_client_out_and_back():
-    from sotto.stats import client_of, flows, provider_of
+    from keepmum.stats import client_of, flows, provider_of
 
     assert client_of("claude-cli/2.1.310 (external, cli)") == "claude-code"
     assert client_of("codex_cli_rs/0.50.0") == "codex" and client_of("") == "unknown"
@@ -240,7 +240,7 @@ def test_flows_follow_each_client_out_and_back():
                           headers={"user-agent": "pi-coding-agent/1.0"})  # clean
         await client.post("/v1/files", content=b"x", headers=cc)  # blocked
         await client.get("/api/hello", headers=cc)  # bodyless: not part of the flow
-        r = await client.get("/_sotto/flows?window=600", headers={"authorization": "Bearer t"})
+        r = await client.get("/_keepmum/flows?window=600", headers={"authorization": "Bearer t"})
         return r.json()
 
     f = anyio.run(go)

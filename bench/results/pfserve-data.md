@@ -1,4 +1,4 @@
-# sotto Phase 0 benchmark — 20261025-234549
+# keepmum Phase 0 benchmark — 20261025-234549
 
 Machine: Apple M5 Pro, 64 GB, macOS 27.0.1, Python 3.12.0. mlx 0.32.4, mlx-embeddings 0.1.1, torch 2.14.1, transformers 5.20.2, apple-fm-sdk 0.2.1, tokenizers 0.23.3.
 

@@ -5,13 +5,13 @@ import secrets
 import anyio
 import httpx
 
-from sotto import selftest
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.proxy import Proxy
-from sotto.redact import Redactor, preview
-from sotto.stats import History, Stats
-from sotto.vault import Vault
+from keepmum import selftest
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.proxy import Proxy
+from keepmum.redact import Redactor, preview
+from keepmum.stats import History, Stats
+from keepmum.vault import Vault
 
 
 def make(tmp_path, previews=True):
@@ -29,7 +29,7 @@ def body(*turns):
 
 
 async def findings(client, token="t"):
-    r = await client.get("/_sotto/findings", headers={"authorization": f"Bearer {token}"})
+    r = await client.get("/_keepmum/findings", headers={"authorization": f"Bearer {token}"})
     return r.status_code, r.json()
 
 
@@ -44,7 +44,7 @@ def test_findings_show_new_text_only_and_never_reach_disk(tmp_path):
 
     async def go():
         _, client = make(tmp_path)
-        await client.post("/v1/messages", json=body(first), headers={"x-sotto-client": "claude-code"})
+        await client.post("/v1/messages", json=body(first), headers={"x-keepmum-client": "claude-code"})
         # The next turn resends the first: only the new text's values are new findings.
         await client.post("/v1/messages", json=body(first, "and mail jane.roe@fastmail.com"))
         return await findings(client), await findings(client, "wrong")

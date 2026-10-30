@@ -1,4 +1,4 @@
-"""sotto command line."""
+"""keepmum command line."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ app = typer.Typer(help="Local secret and PII redaction for Claude Code.", no_arg
 
 @app.callback()
 def main() -> None:
-    pass
+    from . import legacy
+
+    legacy.migrate_quietly()
 
 
 @app.command()
@@ -30,7 +32,7 @@ def scan(
         try:
             raw = sys.stdin.buffer.read() if path == "-" else Path(path).read_bytes()
         except OSError as e:
-            typer.echo(f"sotto scan: {path}: {e.strerror}", err=True)
+            typer.echo(f"keepmum scan: {path}: {e.strerror}", err=True)
             raise typer.Exit(2)
         if b"\0" in raw[:8192]:
             continue  # binary
@@ -53,7 +55,7 @@ def _config():
     try:
         return load()
     except ConfigError as e:
-        typer.echo(f"sotto: bad config: {e}", err=True)
+        typer.echo(f"keepmum: bad config: {e}", err=True)
         raise typer.Exit(2)
 
 
@@ -66,7 +68,7 @@ def _pipeline_or_exit(pii: bool, rules_only: bool, who: str):
                                 allow_patterns=cfg.allow_patterns, pass_types=cfg.pass_types, mask_rules=cfg.mask_rules,
                                 off_rules=cfg.off_rules)
     except ModelUnavailable as e:
-        typer.echo(f"sotto {who}: {e}", err=True)
+        typer.echo(f"keepmum {who}: {e}", err=True)
         raise typer.Exit(2)
 
 
@@ -78,7 +80,7 @@ def _proxy_or_exit(pii, rules_only, upstream, who):  # who: "serve" or "claude",
     try:
         return cfg, build_proxy(cfg, pii=pii, rules_only=rules_only, upstream=upstream, mode=who)
     except ModelUnavailable as e:
-        typer.echo(f"sotto {who}: {e}", err=True)
+        typer.echo(f"keepmum {who}: {e}", err=True)
         raise typer.Exit(2)
 
 
@@ -93,32 +95,32 @@ def claude(ctx: typer.Context) -> None:
 
     cfg = _config()
     if url := is_excluded(Path.cwd()):
-        typer.echo(f"sotto claude: this project is excluded (Claude Code here goes straight to {url}); "
-                   "run `claude`, or `sotto include` to scan it again", err=True)
+        typer.echo(f"keepmum claude: this project is excluded (Claude Code here goes straight to {url}); "
+                   "run `claude`, or `keepmum include` to scan it again", err=True)
         raise typer.Exit(2)
     risks = bypass_risks(Path.cwd(), cfg.port)
     if risks:
-        typer.echo("sotto: refusing to start, Claude Code could bypass the proxy:\n  " + "\n  ".join(risks), err=True)
+        typer.echo("keepmum: refusing to start, Claude Code could bypass the proxy:\n  " + "\n  ".join(risks), err=True)
         raise typer.Exit(2)
     if protected(cfg):
-        # Claude Code's settings send it to the sotto service whatever we set, so use that.
+        # Claude Code's settings send it to the keepmum service whatever we set, so use that.
         port = shared_serve_port(cfg)
         if port is None:
-            typer.echo(f"sotto claude: {PROTECTED_BUT_DOWN}", err=True)
+            typer.echo(f"keepmum claude: {PROTECTED_BUT_DOWN}", err=True)
             raise typer.Exit(2)
         if shutil.which("claude") is None:
-            typer.echo("sotto claude: `claude` is not on PATH", err=True)
+            typer.echo("keepmum claude: `claude` is not on PATH", err=True)
             raise typer.Exit(2)
         raise typer.Exit(_run_child([shutil.which("claude"), *ctx.args],
                                     {**os.environ, "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}"}))
-    # An existing ANTHROPIC_BASE_URL (another gateway) becomes sotto's upstream, never a bypass.
+    # An existing ANTHROPIC_BASE_URL (another gateway) becomes keepmum's upstream, never a bypass.
     upstream = os.environ.get("ANTHROPIC_BASE_URL")
     cfg, proxy = _proxy_or_exit(None, False, upstream, "claude")
     log_to_file(cfg.log_level)
     try:
         code = run_claude(proxy, ctx.args)
     except (FileNotFoundError, RuntimeError) as e:
-        typer.echo(f"sotto claude: {e}", err=True)
+        typer.echo(f"keepmum claude: {e}", err=True)
         raise typer.Exit(2)
     raise typer.Exit(code)
 
@@ -134,7 +136,7 @@ def codex(ctx: typer.Context) -> None:
 
     binary = shutil.which("codex")
     if binary is None:
-        typer.echo("sotto codex: `codex` is not on PATH", err=True)
+        typer.echo("keepmum codex: `codex` is not on PATH", err=True)
         raise typer.Exit(2)
     cfg = _config()
     port = shared_serve_port(cfg, need="responses")
@@ -156,10 +158,10 @@ def serve(
     port: int = typer.Option(None, help="Port on 127.0.0.1 (default: config, else 7788)."),
     upstream: str = typer.Option(None, help="Where scanned requests go (default: config, else api.anthropic.com)."),
     pii: bool = typer.Option(None, "--pii/--no-pii", help="Also mask personal data (default: config)."),
-    rules_only: bool = typer.Option(False, help="Rules only for this run, whatever detect.model says (`sotto model`)."),
-    log_file: bool = typer.Option(False, help="Log to ~/.config/sotto/sotto.log instead of stderr (for the background service)."),
+    rules_only: bool = typer.Option(False, help="Rules only for this run, whatever detect.model says (`keepmum model`)."),
+    log_file: bool = typer.Option(False, help="Log to ~/.config/keepmum/keepmum.log instead of stderr (for the background service)."),
 ) -> None:
-    """Run the proxy on 127.0.0.1. Point Claude Code at it with ANTHROPIC_BASE_URL, or `sotto protect`."""
+    """Run the proxy on 127.0.0.1. Point Claude Code at it with ANTHROPIC_BASE_URL, or `keepmum protect`."""
     import logging
     import signal
 
@@ -169,15 +171,15 @@ def serve(
     if log_file:
         log_to_file(cfg.log_level)
     else:
-        logging.basicConfig(level=cfg.log_level.upper(), format="sotto: %(message)s")
-        # Only sotto decides what is logged: libraries would print URLs and request details.
+        logging.basicConfig(level=cfg.log_level.upper(), format="keepmum: %(message)s")
+        # Only keepmum decides what is logged: libraries would print URLs and request details.
         for name in ("httpx", "httpcore", "uvicorn", "uvicorn.error"):
             logging.getLogger(name).setLevel(logging.WARNING)
     server = BackgroundServer(proxy, port or cfg.port)
     server.start()
     # launchd stops the service with SIGTERM: shut down cleanly and remove runtime.json.
     signal.signal(signal.SIGTERM, lambda *_: setattr(server.server, "should_exit", True))
-    typer.echo(f"sotto: listening on http://127.0.0.1:{server.port} -> {proxy.upstream}", err=True)
+    typer.echo(f"keepmum: listening on http://127.0.0.1:{server.port} -> {proxy.upstream}", err=True)
     try:
         server.thread.join()
     except KeyboardInterrupt:
@@ -216,7 +218,7 @@ def setup() -> None:
     try:
         path = download_model(progress)
     except (PfServeError, OSError) as e:
-        typer.echo(f"\nsotto setup: {e}", err=True)
+        typer.echo(f"\nkeepmum setup: {e}", err=True)
         raise typer.Exit(1)
     typer.echo(f"\nmodel ready: {path}", err=True)
     if find_binary() is None:
@@ -230,14 +232,14 @@ def protect(
     client: list[str] = typer.Option(None, "--client", help="claude, codex, pi or opencode (default: every one installed)."),
     as_json: bool = typer.Option(False, "--json", help="Print status as JSON."),
 ) -> None:
-    """Send every Claude Code, Codex, pi and opencode session through `sotto serve` (on), stop (off), or show which."""
+    """Send every Claude Code, Codex, pi and opencode session through `keepmum serve` (on), stop (off), or show which."""
     import json
 
     from .clients import CLIENTS, protect_clients
 
     cfg = _config()
     if action not in ("on", "off", "status") or any(c not in CLIENTS for c in client or []):
-        typer.echo("sotto protect: use on, off or status, and --client claude|codex|pi|opencode", err=True)
+        typer.echo("keepmum protect: use on, off or status, and --client claude|codex|pi|opencode", err=True)
         raise typer.Exit(2)
     result = protect_clients(action, cfg.port, client or None)
     if as_json:
@@ -250,7 +252,7 @@ def protect(
         elif st.get("error"):
             line = f"error: {st['error']}"
         elif st.get("on"):
-            line = "on: goes through sotto" + (f" ({', '.join(st['providers'])})" if st.get("providers") else "")
+            line = "on: goes through keepmum" + (f" ({', '.join(st['providers'])})" if st.get("providers") else "")
         else:
             other = st.get("other")
             other = ", ".join(other) if isinstance(other, list) else other
@@ -261,7 +263,7 @@ def protect(
     if action == "on":
         typer.echo("Claude Code sessions switch now; Codex, pi and opencode pick it up when they next start.", err=True)
     elif action == "off":
-        typer.echo("Sessions already running keep using sotto until they restart.", err=True)
+        typer.echo("Sessions already running keep using keepmum until they restart.", err=True)
     if any(st.get("error") for st in result.values()):
         raise typer.Exit(1)
 
@@ -276,15 +278,15 @@ def observe(action: str = typer.Argument("status", help="on, off, or status")) -
         try:
             set_detect_flag("observe", action == "on", cfg.path)
         except (ConfigError, OSError) as e:
-            typer.echo(f"sotto observe: {e}", err=True)
+            typer.echo(f"keepmum observe: {e}", err=True)
             raise typer.Exit(1)
         on = action == "on"
     elif action == "status":
         on = cfg.observe
     else:
-        typer.echo("sotto observe: use on, off or status", err=True)
+        typer.echo("keepmum observe: use on, off or status", err=True)
         raise typer.Exit(2)
-    typer.echo("observe only: requests go to Anthropic UNMASKED; sotto only counts what it would mask" if on
+    typer.echo("observe only: requests go to Anthropic UNMASKED; keepmum only counts what it would mask" if on
                else "masking: sensitive values are replaced before requests leave this Mac", err=True)
     if action != "status":
         typer.echo("Running proxies switch on their next request.", err=True)
@@ -299,19 +301,19 @@ def model(action: str = typer.Argument("status", help="on, off, or status")) -> 
 
     cfg = _config()
     if action == "on" and not (find_binary() and find_model()):
-        typer.echo("sotto model: the model is not downloaded: run `sotto setup` first", err=True)
+        typer.echo("keepmum model: the model is not downloaded: run `keepmum setup` first", err=True)
         raise typer.Exit(2)
     if action in ("on", "off"):
         try:
             set_detect_flag("model", action == "on", cfg.path)
         except (ConfigError, OSError) as e:
-            typer.echo(f"sotto model: {e}", err=True)
+            typer.echo(f"keepmum model: {e}", err=True)
             raise typer.Exit(1)
         on = action == "on"
     elif action == "status":
         on = cfg.model
     else:
-        typer.echo("sotto model: use on, off or status", err=True)
+        typer.echo("keepmum model: use on, off or status", err=True)
         raise typer.Exit(2)
     typer.echo("rules and the local model: secrets and personal data the rules alone would miss" if on
                else "rules only: names, addresses, and secrets with no known shape or telling name go out unmasked", err=True)
@@ -335,10 +337,10 @@ def types(
     cfg = _config()
     wanted = [n.upper() for n in names or []]
     if action not in ("list", "mask", "pass") or any(n not in TYPES for n in wanted) or (action != "list" and not wanted):
-        typer.echo(f"sotto types: use list, or mask|pass with types from {', '.join(TYPES)}", err=True)
+        typer.echo(f"keepmum types: use list, or mask|pass with types from {', '.join(TYPES)}", err=True)
         raise typer.Exit(2)
     if action == "pass" and "SECRET" in wanted and not yes:
-        typer.echo("sotto types: letting secrets through sends API keys and passwords to the provider unmasked; "
+        typer.echo("keepmum types: letting secrets through sends API keys and passwords to the provider unmasked; "
                    "add --yes if you mean it", err=True)
         raise typer.Exit(2)
     passed = set(cfg.pass_types)
@@ -347,7 +349,7 @@ def types(
         try:
             set_value("detect", "pass", [t for t in TYPES if t in passed], cfg.path)
         except (ConfigError, OSError) as e:
-            typer.echo(f"sotto types: {e}", err=True)
+            typer.echo(f"keepmum types: {e}", err=True)
             raise typer.Exit(1)
     personal = [t for t in TYPES if t != "SECRET"]
     state = {t: ("pass" if t in passed else "mask" if t == "SECRET" or cfg.pii else "off: personal data is off")
@@ -387,7 +389,7 @@ def rules_list(as_json: bool = typer.Option(False, "--json", help="Print JSON.")
     for i, v in enumerate(cfg.allow_patterns):
         typer.echo(f"allow-pattern {i}  /{v}/", err=True)
     for r in cfg.off_rules:
-        typer.echo(f"off   {r}  (built-in; `sotto rules on {r}` turns it back on)", err=True)
+        typer.echo(f"off   {r}  (built-in; `keepmum rules on {r}` turns it back on)", err=True)
 
 
 def _save_rules(cfg, section: str, key: str, value) -> None:
@@ -396,7 +398,7 @@ def _save_rules(cfg, section: str, key: str, value) -> None:
     try:
         set_value(section, key, value, cfg.path)
     except (ConfigError, OSError) as e:
-        typer.echo(f"sotto rules: {e}", err=True)
+        typer.echo(f"keepmum rules: {e}", err=True)
         raise typer.Exit(1)
     typer.echo("saved; running proxies apply it on their next request", err=True)
 
@@ -416,10 +418,10 @@ def rules_mask(
     try:
         re.compile(pattern)
     except re.error as e:
-        typer.echo(f"sotto rules: bad pattern: {e}", err=True)
+        typer.echo(f"keepmum rules: bad pattern: {e}", err=True)
         raise typer.Exit(2)
     if kind.upper() not in TYPES:
-        typer.echo(f"sotto rules: --type must be one of {', '.join(TYPES)}", err=True)
+        typer.echo(f"keepmum rules: --type must be one of {', '.join(TYPES)}", err=True)
         raise typer.Exit(2)
     rule = {"name": name or f"rule {len(cfg.mask_rules) + 1}", "pattern": pattern, "type": kind.upper()}
     _save_rules(cfg, "rules", "mask", [*cfg.mask_rules, rule])
@@ -438,7 +440,7 @@ def rules_allow(
         try:
             re.compile(value)
         except re.error as e:
-            typer.echo(f"sotto rules: bad pattern: {e}", err=True)
+            typer.echo(f"keepmum rules: bad pattern: {e}", err=True)
             raise typer.Exit(2)
         _save_rules(cfg, "allowlist", "patterns", [*cfg.allow_patterns, value])
     else:
@@ -448,14 +450,14 @@ def rules_allow(
 @rules_app.command("remove")
 def rules_remove(
     kind: str = typer.Argument(..., help="mask, allow or allow-pattern"),
-    index: int = typer.Argument(..., help="The number `sotto rules list` shows."),
+    index: int = typer.Argument(..., help="The number `keepmum rules list` shows."),
 ) -> None:
     """Remove one of your rules."""
     cfg = _config()
     table = {"mask": ("rules", "mask", cfg.mask_rules), "allow": ("allowlist", "strings", cfg.allow_strings),
              "allow-pattern": ("allowlist", "patterns", cfg.allow_patterns)}
     if kind not in table or not 0 <= index < len(table[kind][2]):
-        typer.echo("sotto rules: no such rule; see `sotto rules list`", err=True)
+        typer.echo("keepmum rules: no such rule; see `keepmum rules list`", err=True)
         raise typer.Exit(2)
     section, key, items = table[kind]
     _save_rules(cfg, section, key, [x for i, x in enumerate(items) if i != index])
@@ -479,22 +481,22 @@ def rules_builtin(as_json: bool = typer.Option(False, "--json", help="Print JSON
 
 @rules_app.command("off")
 def rules_off(
-    names: list[str] = typer.Argument(..., help="Built-in rule names, as `sotto rules builtin` lists them."),
+    names: list[str] = typer.Argument(..., help="Built-in rule names, as `keepmum rules builtin` lists them."),
     yes: bool = typer.Option(False, "--yes", help="Confirm turning off a rule that finds secrets."),
 ) -> None:
     """Turn off built-in rules that mask something they should not. Other rules and the local
-    model can still find the same value; for one value, `sotto rules allow` is narrower."""
+    model can still find the same value; for one value, `keepmum rules allow` is narrower."""
     from .detect.rules import builtin_rules
 
     cfg = _config()
     unknown = [n for n in names if n not in builtin_rules()]
     if unknown:
-        typer.echo(f"sotto rules: no built-in rule {unknown[0]!r}; see `sotto rules builtin`", err=True)
+        typer.echo(f"keepmum rules: no built-in rule {unknown[0]!r}; see `keepmum rules builtin`", err=True)
         raise typer.Exit(2)
     secret = [n for n in names if builtin_rules()[n] == "SECRET"]
     if secret and not yes:
-        typer.echo(f"sotto rules: {', '.join(secret)} finds secrets; with it off, what only it finds reaches the "
-                   "provider unmasked. Add --yes if you mean it, or `sotto rules allow` one value instead", err=True)
+        typer.echo(f"keepmum rules: {', '.join(secret)} finds secrets; with it off, what only it finds reaches the "
+                   "provider unmasked. Add --yes if you mean it, or `keepmum rules allow` one value instead", err=True)
         raise typer.Exit(2)
     _save_rules(cfg, "rules", "off", [*cfg.off_rules, *(n for n in dict.fromkeys(names) if n not in cfg.off_rules)])
 
@@ -511,19 +513,19 @@ def exclude(
     path: Path = typer.Argument(None, help="A folder in the project (default: the current folder)."),
     list_: bool = typer.Option(False, "--list", help="List excluded projects."),
 ) -> None:
-    """Let Claude Code in one project skip sotto and go straight to the API. `sotto include` undoes it."""
+    """Let Claude Code in one project skip keepmum and go straight to the API. `keepmum include` undoes it."""
     from .protect import ProtectError, excluded_projects
     from .protect import exclude as do_exclude
 
     if list_:
         for p in excluded_projects():
-            typer.echo(f"{p['path']}  -> {p['url']}" + ("" if p["active"] else "  (setting removed: goes through sotto)"))
+            typer.echo(f"{p['path']}  -> {p['url']}" + ("" if p["active"] else "  (setting removed: goes through keepmum)"))
         return
     cfg = _config()
     try:
         root = do_exclude(path or Path.cwd(), cfg.upstream)
     except ProtectError as e:
-        typer.echo(f"sotto exclude: {e}", err=True)
+        typer.echo(f"keepmum exclude: {e}", err=True)
         raise typer.Exit(1)
     typer.echo(f"excluded {root}: Claude Code there goes straight to {cfg.upstream}, unscanned.\n"
                "It applies once the folder is trusted in Claude Code; sessions already open there switch now.", err=True)
@@ -538,7 +540,7 @@ def include(path: Path = typer.Argument(None, help="A folder in the project (def
     try:
         root = do_include(path or Path.cwd())
     except ProtectError as e:
-        typer.echo(f"sotto include: {e}", err=True)
+        typer.echo(f"keepmum include: {e}", err=True)
         raise typer.Exit(1)
     typer.echo(f"included {root} again. Restart Claude Code sessions open there: a running session keeps "
                "going straight to the API until it restarts.", err=True)
@@ -572,7 +574,7 @@ def status(as_json: bool = typer.Option(True, "--json/--text", help="Print JSON 
 
 @app.command()
 def doctor() -> None:
-    """Check that this Mac can run sotto, and that nothing routes around it."""
+    """Check that this Mac can run keepmum, and that nothing routes around it."""
     from .doctor import run
 
     raise typer.Exit(run())

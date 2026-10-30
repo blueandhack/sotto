@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Build build/Sotto.app: release binary, Info.plist, icon, the bundled engine (bundle-runtime.sh), code signature.
+# Build build/Keepmum.app: release binary, Info.plist, icon, the bundled engine (bundle-runtime.sh), code signature.
 #   SKIP_RUNTIME=1 ./build-app.sh   the dashboard alone, without the engine (faster, for UI work)
 #   SIGN_IDENTITY="Developer ID Application: ..." ./build-app.sh   (default: first Apple Development identity, else ad-hoc)
-#   BUNDLE_ID=com.example.sotto ./build-app.sh
+#   BUNDLE_ID=com.example.keepmum ./build-app.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-BUNDLE_ID=${BUNDLE_ID:-dev.sotto.Sotto}
+BUNDLE_ID=${BUNDLE_ID:-app.keepmum.Keepmum}
 VERSION=${VERSION:-0.0.1}
-APP=build/Sotto.app
+APP=build/Keepmum.app
 
 swift build -c release
 rm -rf "$APP" build/icon.iconset
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/icon.iconset
-cp .build/release/Sotto "$APP/Contents/MacOS/Sotto"
-"$APP/Contents/MacOS/Sotto" --icon build/icon.iconset
-iconutil -c icns build/icon.iconset -o "$APP/Contents/Resources/Sotto.icns"
+cp .build/release/Keepmum "$APP/Contents/MacOS/Keepmum"
+"$APP/Contents/MacOS/Keepmum" --icon build/icon.iconset
+iconutil -c icns build/icon.iconset -o "$APP/Contents/Resources/Keepmum.icns"
 # Claude and Anthropic logos (see Brand/NOTICE.md).
 if compgen -G "Brand/*.png" >/dev/null; then cp Brand/*.png "$APP/Contents/Resources/"; fi
 
@@ -23,11 +23,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Sotto</string>
-  <key>CFBundleDisplayName</key><string>sotto</string>
+  <key>CFBundleName</key><string>Keepmum</string>
+  <key>CFBundleDisplayName</key><string>keepmum</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
-  <key>CFBundleExecutable</key><string>Sotto</string>
-  <key>CFBundleIconFile</key><string>Sotto</string>
+  <key>CFBundleExecutable</key><string>Keepmum</string>
+  <key>CFBundleIconFile</key><string>Keepmum</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>

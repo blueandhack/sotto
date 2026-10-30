@@ -5,7 +5,7 @@ A candidate is *sensitive* when it covers at least half of a labeled span (clear
 that value) and a *false positive* when it touches no labeled span at all; partial overlaps
 are left out. Each judge sees the span marked in ~200 characters of context.
 
-    uv run python bench/judge.py --data bench/data --data /tmp/sotto-holdout --judges afm-zero,afm-fewshot,qwen3-4b
+    uv run python bench/judge.py --data bench/data --data /tmp/keepmum-holdout --judges afm-zero,afm-fewshot,qwen3-4b
 Apple judges need `apple-fm-sdk` (the `afm` extra).
 """
 
@@ -21,14 +21,14 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from sotto.detect import Span
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
+from keepmum.detect import Span
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
 
 from pf_mlx import PrivacyFilter  # noqa: E402  (bench/, the script's own directory)
 from run import _covered, load_records, percentile  # noqa: E402
 
-# The Qwen judge was briefly sotto's opt-in L3. It was removed once the personal-data
+# The Qwen judge was briefly keepmum's opt-in L3. It was removed once the personal-data
 # refinement made it redundant (it cleared 0 of 347 spans); it lives here for the record.
 
 MODEL = "mlx-community/Qwen3-4B-Instruct-2507-4bit"
@@ -197,7 +197,7 @@ class AppleJudge:
 
 
 class QwenJudge:
-    """The production judge (sotto.detect.judge), asked directly."""
+    """The production judge (keepmum.detect.judge), asked directly."""
 
     def __init__(self, repo: str):
         self.judge = LLMJudge(repo)

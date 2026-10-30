@@ -54,9 +54,9 @@ struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                SottoBadge(size: 30)
+                KeepmumBadge(size: 30)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("sotto").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                    Text("keepmum").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
                     Text("privacy proxy").font(.system(size: 10.5)).foregroundStyle(Theme.secondary)
                 }
             }
@@ -93,7 +93,7 @@ struct Sidebar: View {
         let s = store.snapshot
         switch store.connection {
         case .offline(let reason): return reason
-        case .connecting: return "Looking for sotto…"
+        case .connecting: return "Looking for keepmum…"
         default:
             return "\(s.modeLabel) · PII \(s.pii == true ? "on" : "off") · up \(durationText(s.uptime))"
         }
@@ -150,7 +150,7 @@ struct OfflineBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "bolt.horizontal.circle").foregroundStyle(Theme.danger)
             Text("\(reason). Start the background service in Settings, or run ").foregroundStyle(Theme.text)
-                + Text("sotto claude").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Theme.accent)
+                + Text("keepmum claude").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Theme.accent)
                 + Text(", to see live data.").foregroundStyle(Theme.text)
             Spacer()
         }
@@ -166,7 +166,7 @@ struct ObserveBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "eye.trianglebadge.exclamationmark").foregroundStyle(Theme.danger)
-            Text("Observe only: requests go to Anthropic unmasked. sotto counts what it would mask. Switch back in Settings.")
+            Text("Observe only: requests go to Anthropic unmasked. keepmum counts what it would mask. Switch back in Settings.")
                 .foregroundStyle(Theme.text)
             Spacer()
         }
@@ -228,7 +228,7 @@ struct ActivityPage: View {
     var body: some View {
         let s = store.snapshot
         VStack(spacing: 16) {
-            PageHeader(title: "Activity", subtitle: "Every request, newest first. Counts only: sotto never shows a value.") { PreviewToggle(store: store) }
+            PageHeader(title: "Activity", subtitle: "Every request, newest first. Counts only: keepmum never shows a value.") { PreviewToggle(store: store) }
             Card(title: "Last hour", subtitle: "Masked values per minute · red dot: a blocked request") {
                 MaskedTimeline(minutes: s.timeline).frame(height: 120)
             }
@@ -252,7 +252,7 @@ struct ActivityPage: View {
         case .clean: "Nothing new to mask (earlier turns may still hold masked values)"
         case .blocked: "Never sent: scanning failed or the endpoint is not scanned"
         case .observed: "Observe mode: sent unmasked, only counted"
-        case nil: "Kept across restarts in ~/.config/sotto/history.jsonl"
+        case nil: "Kept across restarts in ~/.config/keepmum/history.jsonl"
         }
     }
 }
@@ -264,7 +264,7 @@ struct PerformancePage: View {
         let s = store.snapshot
         let over = s.recent.compactMap(\.scanMs).filter { $0 > LatencyChart.budget }.count
         VStack(spacing: 16) {
-            PageHeader(title: "Performance", subtitle: "Time sotto adds before a request leaves") { PreviewToggle(store: store) }
+            PageHeader(title: "Performance", subtitle: "Time keepmum adds before a request leaves") { PreviewToggle(store: store) }
             HStack(spacing: 12) {
                 KPI(title: "Median (p50)", value: s.scanMs.p50.map { String(format: "%.0f ms", $0) } ?? "—", icon: "timer", footnote: "half of scans are faster")
                 KPI(title: "p95", value: s.scanMs.p95.map { String(format: "%.0f ms", $0) } ?? "—", icon: "gauge.with.dots.needle.67percent",
@@ -302,7 +302,7 @@ struct SettingsPage: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     Card(title: "Privacy") {
-                        Text("This app reads sotto's stats feed: counts, types and timestamps, and for the Logs page the first and last character of long masked values (turn that off with [log] previews = false). It never receives a whole value or a placeholder, talks only to 127.0.0.1, and sends no telemetry.")
+                        Text("This app reads keepmum's stats feed: counts, types and timestamps, and for the Logs page the first and last character of long masked values (turn that off with [log] previews = false). It never receives a whole value or a placeholder, talks only to 127.0.0.1, and sends no telemetry.")
                             .font(.system(size: 12)).foregroundStyle(Theme.text).fixedSize(horizontal: false, vertical: true)
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -317,7 +317,7 @@ struct SettingsPage: View {
                         row("Detector", s.detector ?? "—")
                         row("Upstream", s.upstream ?? "—")
                         row("Version", s.version ?? "—")
-                        row("Token", "~/.config/sotto/stats-token")
+                        row("Token", "~/.config/keepmum/stats-token")
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)

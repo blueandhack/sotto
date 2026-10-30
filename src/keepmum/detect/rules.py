@@ -21,7 +21,7 @@ CHECKS = {"entropy": "SECRET", "luhn": "ACCOUNT", "iban": "ACCOUNT"}
 @cache
 def builtin_rules() -> dict[str, str]:
     """Every built-in rule and check that can be turned off ([rules] off), with its type."""
-    raw = tomllib.loads(resources.files("sotto.detect").joinpath("rules.toml").read_text())
+    raw = tomllib.loads(resources.files("keepmum.detect").joinpath("rules.toml").read_text())
     return {**{r["id"]: r.get("type", "SECRET") for r in raw.get("rule", [])}, **CHECKS}
 
 
@@ -122,7 +122,7 @@ class RulesDetector:
 
     def __init__(self, path: Path | None = None):
         if path is None:
-            raw = resources.files("sotto.detect").joinpath("rules.toml").read_text()
+            raw = resources.files("keepmum.detect").joinpath("rules.toml").read_text()
         else:
             raw = path.read_text()
         cfg = tomllib.loads(raw)

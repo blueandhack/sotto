@@ -8,19 +8,19 @@ import textwrap
 import httpx
 import pytest
 
-from sotto import config as config_mod
-from sotto import launch, selftest
-from sotto.detect.pipeline import Pipeline, default_pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.proxy import Proxy
-from sotto.redact import Redactor
-from sotto.vault import Vault
+from keepmum import config as config_mod
+from keepmum import launch, selftest
+from keepmum.detect.pipeline import Pipeline, default_pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.proxy import Proxy
+from keepmum.redact import Redactor
+from keepmum.vault import Vault
 
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(launch, "RUNTIME_FILE", tmp_path / ".config" / "sotto" / "runtime.json")
+    monkeypatch.setattr(launch, "RUNTIME_FILE", tmp_path / ".config" / "keepmum" / "runtime.json")
     for k in launch.BYPASS_KEYS:
         monkeypatch.delenv(k, raising=False)
     return tmp_path
@@ -95,7 +95,7 @@ sys.exit(7)
 """
 
 
-def test_sotto_claude_runs_claude_through_the_proxy(home, tmp_path, monkeypatch):
+def test_keepmum_claude_runs_claude_through_the_proxy(home, tmp_path, monkeypatch):
     canary = selftest.make_canary()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -129,7 +129,7 @@ def test_runtime_file_is_private_while_running(home):
         info = json.loads(launch.RUNTIME_FILE.read_text())
         assert info["port"] == server.port and info["pid"] == os.getpid()
         assert launch.RUNTIME_FILE.stat().st_mode & 0o777 == 0o600
-        assert httpx.get(f"http://127.0.0.1:{server.port}/_sotto/health").json() == {"ok": True}
+        assert httpx.get(f"http://127.0.0.1:{server.port}/_keepmum/health").json() == {"ok": True}
     finally:
         server.stop()
     assert not launch.RUNTIME_FILE.exists()
@@ -157,9 +157,9 @@ def wrapper_env(tmp_path, monkeypatch):
     """A fake claude, a mock Anthropic on a real port, and a private HOME for the wrapper."""
     import shutil
 
-    from sotto.detect.pfserve import find_binary, find_model
+    from keepmum.detect.pfserve import find_binary, find_model
 
-    model_env = {k: str(v) for k, v in (("SOTTO_PF_SERVE", find_binary()), ("SOTTO_PF_MODEL", find_model())) if v}
+    model_env = {k: str(v) for k, v in (("KEEPMUM_PF_SERVE", find_binary()), ("KEEPMUM_PF_MODEL", find_model())) if v}
     monkeypatch.setattr(launch, "RUNTIME_FILE", tmp_path / "test-runtime.json")
     mock = selftest.MockUpstream()
     upstream = launch.BackgroundServer(_App(mock.app))
@@ -172,7 +172,7 @@ def wrapper_env(tmp_path, monkeypatch):
     env = {k: v for k, v in os.environ.items() if k not in launch.BYPASS_KEYS}
     env.update(HOME=str(home), **model_env, CANARY=selftest.make_canary(),
                OUT=str(tmp_path / "out.json"), ANTHROPIC_BASE_URL=f"http://127.0.0.1:{upstream.port}")
-    wrapper = shutil.which("sotto-claude-wrapper", path=os.path.dirname(sys.executable))
+    wrapper = shutil.which("keepmum-claude-wrapper", path=os.path.dirname(sys.executable))
     yield {"env": env, "fake": str(fake), "mock": mock, "home": home, "out": tmp_path / "out.json", "wrapper": wrapper}
     upstream.stop()
 
@@ -180,7 +180,7 @@ def wrapper_env(tmp_path, monkeypatch):
 def test_wrapper_runs_claude_through_its_own_proxy(wrapper_env):
     import subprocess
 
-    from sotto.detect.pipeline import ModelUnavailable, default_pipeline
+    from keepmum.detect.pipeline import ModelUnavailable, default_pipeline
 
     try:
         default_pipeline()
@@ -193,12 +193,12 @@ def test_wrapper_runs_claude_through_its_own_proxy(wrapper_env):
     canary = w["env"]["CANARY"]
     assert r.returncode == 5 and r.stdout == "CLAUDE-STDOUT\n"  # exit code passed on; stdout untouched
     assert out["args"] == ["--output-format", "stream-json"]
-    assert out["base"] != w["env"]["ANTHROPIC_BASE_URL"]  # went through sotto, which chained to the mock
+    assert out["base"] != w["env"]["ANTHROPIC_BASE_URL"]  # went through keepmum, which chained to the mock
     assert canary in out["reply"]["content"][0]["text"]
     assert not any(canary.encode() in b for b in w["mock"].received)
 
 
-def test_wrapper_reuses_a_running_sotto_serve(wrapper_env, monkeypatch):
+def test_wrapper_reuses_a_running_keepmum_serve(wrapper_env, monkeypatch):
     import subprocess
 
     w = wrapper_env
@@ -207,7 +207,7 @@ def test_wrapper_reuses_a_running_sotto_serve(wrapper_env, monkeypatch):
     serve = launch.BackgroundServer(serve_proxy)
     serve.start()
     try:
-        cfg_dir = w["home"] / ".config" / "sotto"
+        cfg_dir = w["home"] / ".config" / "keepmum"
         cfg_dir.mkdir(parents=True)
         (cfg_dir / "config.toml").write_text(f"[server]\nport = {serve.port}\n")
         (cfg_dir / "stats-token").write_text("tok")

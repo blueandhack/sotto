@@ -203,7 +203,7 @@ func percent(_ part: Int, of whole: Int) -> String {
 }
 
 /// Logos. The Claude and Anthropic logos (mac/Brand, from Anthropic's press kit; see
-/// Brand/NOTICE.md) identify the services sotto works with. build-app.sh copies them into the
+/// Brand/NOTICE.md) identify the services keepmum works with. build-app.sh copies them into the
 /// app; when running from the build folder they are found in mac/Brand.
 enum Brand {
     static func logo(_ name: String) -> NSImage? {
@@ -225,41 +225,60 @@ enum Brand {
     }()
 }
 
-/// The sotto mark: three lines of text where one word became placeholders. The first square is
-/// solid ("the masked value"). Drawn in a 100x100 box at any size, in one color, so it works as
-/// an app icon, a template image in the menu bar, and a small logo.
-struct SottoMark: View {
+/// The keepmum mark: a speech bubble whose line of text has one word turned into placeholders,
+/// cut out of the bubble. The first square is solid ("the masked value"). Drawn in a 100x100 box
+/// at any size, in one color, so it works as an app icon, a template image in the menu bar, and
+/// a small logo.
+struct KeepmumMark: View {
     var color: Color = .white
 
     var body: some View {
         GeometryReader { geo in
             let u = min(geo.size.width, geo.size.height) / 100
-            VStack(alignment: .leading, spacing: 12 * u) {
-                Capsule().fill(color).frame(width: 62 * u, height: 11 * u)
-                HStack(spacing: 6 * u) {
-                    Capsule().fill(color).frame(width: 18 * u, height: 11 * u)
+            ZStack(alignment: .topLeading) {
+                Bubble().fill(color)
+                Group {
+                    Capsule().frame(width: 46 * u, height: 9 * u).offset(x: 22 * u, y: 30 * u)
+                    Capsule().frame(width: 14 * u, height: 9 * u).offset(x: 22 * u, y: 46 * u)
                     ForEach(0..<3, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 3.4 * u, style: .continuous)
-                            .fill(color.opacity(i == 0 ? 1 : 0.5))
-                            .frame(width: 11 * u, height: 11 * u)
+                        RoundedRectangle(cornerRadius: 2.6 * u, style: .continuous)
+                            .frame(width: 9 * u, height: 9 * u)
+                            .offset(x: (41 + Double(i) * 14) * u, y: 46 * u)
+                            .opacity(i == 0 ? 1 : 0.55)
                     }
                 }
-                Capsule().fill(color).frame(width: 44 * u, height: 11 * u)
+                .blendMode(.destinationOut)
             }
+            .compositingGroup()
+            .frame(width: 100 * u, height: 100 * u)
             .frame(width: geo.size.width, height: geo.size.height)
+        }
+    }
+
+    /// The bubble: a rounded body and a curved tail at the bottom left, as one outline.
+    private struct Bubble: Shape {
+        func path(in r: CGRect) -> Path {
+            let u = min(r.width, r.height) / 100
+            let body = Path(roundedRect: CGRect(x: 8 * u, y: 14 * u, width: 84 * u, height: 60 * u), cornerRadius: 22 * u, style: .continuous)
+            var tail = Path()
+            tail.move(to: CGPoint(x: 22 * u, y: 60 * u))
+            tail.addLine(to: CGPoint(x: 40 * u, y: 70 * u))
+            tail.addQuadCurve(to: CGPoint(x: 17 * u, y: 88 * u), control: CGPoint(x: 30 * u, y: 84 * u))
+            tail.addQuadCurve(to: CGPoint(x: 22 * u, y: 60 * u), control: CGPoint(x: 24 * u, y: 76 * u))
+            return body.union(tail)
         }
     }
 }
 
 /// The mark on the accent squircle: the app icon's look, at small sizes.
-struct SottoBadge: View {
+struct KeepmumBadge: View {
     var size: CGFloat
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
             .fill(LinearGradient(colors: [Color(nsColor: NSColor(hex: 0x5B66E0)), Color(nsColor: NSColor(hex: 0x3F49C2))],
                                  startPoint: .top, endPoint: .bottom))
-            .overlay(SottoMark(color: .white).padding(size * 0.17))
+            .overlay(KeepmumMark(color: .white).padding(size * 0.15))
             .frame(width: size, height: size)
     }
 }
@@ -271,7 +290,7 @@ extension Brand {
     @MainActor static let menuBarIdle = renderMenuBarImage(dimmed: true)
 
     @MainActor private static func renderMenuBarImage(dimmed: Bool) -> NSImage {
-        let renderer = ImageRenderer(content: SottoMark(color: .black.opacity(dimmed ? 0.45 : 1)).frame(width: 18, height: 18))
+        let renderer = ImageRenderer(content: KeepmumMark(color: .black.opacity(dimmed ? 0.45 : 1)).frame(width: 18, height: 18))
         renderer.scale = 2
         let image = renderer.nsImage ?? NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: nil)!
         image.size = NSSize(width: 18, height: 18)

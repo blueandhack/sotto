@@ -8,13 +8,13 @@ import anyio
 import httpx
 import pytest
 
-from sotto import config as config_mod
-from sotto import selftest
-from sotto.detect import Span
-from sotto.detect.pipeline import Pipeline
-from sotto.detect.rules import RulesDetector
-from sotto.redact import Redactor
-from sotto.vault import Vault
+from keepmum import config as config_mod
+from keepmum import selftest
+from keepmum.detect import Span
+from keepmum.detect.pipeline import Pipeline
+from keepmum.detect.rules import RulesDetector
+from keepmum.redact import Redactor
+from keepmum.vault import Vault
 
 
 class FakeModel:
@@ -61,7 +61,7 @@ def test_user_rules_mask_even_with_personal_data_off_and_exceptions_win():
 
 
 def test_settings_change_while_running(tmp_path):
-    from sotto import launch
+    from keepmum import launch
 
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("[detect]\npii = true\n")
@@ -110,19 +110,19 @@ def test_set_value_keeps_the_rest_and_rejects_bad_values(tmp_path):
 def test_cli_types_needs_yes_for_secrets(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
+    from keepmum.cli import app
 
     monkeypatch.setenv("HOME", str(tmp_path))
     run = lambda *a: CliRunner().invoke(app, list(a))
     assert run("types", "pass", "SECRET").exit_code == 2
     assert run("types", "pass", "person").exit_code == 0
-    assert config_mod.load(tmp_path / ".config" / "sotto" / "config.toml").pass_types == ["PERSON"]
+    assert config_mod.load(tmp_path / ".config" / "keepmum" / "config.toml").pass_types == ["PERSON"]
     assert run("rules", "mask", "EMP-\\d{6}", "--name", "Employee ID", "--type", "account").exit_code == 0
     assert run("rules", "allow", "acme-test-key").exit_code == 0
     data = json.loads(run("rules", "list", "--json").stdout)
     assert data["mask"][0]["type"] == "ACCOUNT" and data["allow_strings"] == ["acme-test-key"]
     assert run("rules", "remove", "mask", "0").exit_code == 0
-    assert config_mod.load(tmp_path / ".config" / "sotto" / "config.toml").mask_rules == []
+    assert config_mod.load(tmp_path / ".config" / "keepmum" / "config.toml").mask_rules == []
 
 
 # --- The model on or off (detect.model) ---------------------------------------------------
@@ -146,8 +146,8 @@ def test_model_setting_is_read_and_checked(tmp_path):
 
 
 def test_model_off_needs_no_model_files(tmp_path, monkeypatch):
-    from sotto import launch
-    from sotto.detect import pfserve
+    from keepmum import launch
+    from keepmum.detect import pfserve
 
     monkeypatch.setattr(pfserve, "find_binary", lambda: None)
     monkeypatch.setattr(pfserve, "find_model", lambda: None)
@@ -160,8 +160,8 @@ def test_model_off_needs_no_model_files(tmp_path, monkeypatch):
 def test_model_switches_while_running_without_dropping_a_request(tmp_path, monkeypatch):
     import time
 
-    from sotto import launch
-    from sotto.detect import pipeline as pipeline_mod
+    from keepmum import launch
+    from keepmum.detect import pipeline as pipeline_mod
 
     model = Closable()
     monkeypatch.setattr(pipeline_mod, "load_model", lambda: model)
@@ -177,7 +177,7 @@ def test_model_switches_while_running_without_dropping_a_request(tmp_path, monke
     def send():
         async def go():
             r = await client.post("/v1/messages", json=body)
-            stats = await client.get("/_sotto/stats", headers={"authorization": f"Bearer {proxy.stats_token}"})
+            stats = await client.get("/_keepmum/stats", headers={"authorization": f"Bearer {proxy.stats_token}"})
             return r.status_code, stats.json()
         return anyio.run(go)
 
@@ -204,7 +204,7 @@ def test_model_switches_while_running_without_dropping_a_request(tmp_path, monke
 def test_a_model_that_does_not_load_is_reported_and_the_rules_keep_scanning():
     import threading
 
-    from sotto.detect.pipeline import ModelSwitch, ModelUnavailable
+    from keepmum.detect.pipeline import ModelSwitch, ModelUnavailable
 
     def broken():
         raise ModelUnavailable("the Privacy Filter model is not downloaded")
@@ -224,12 +224,12 @@ def test_a_model_that_does_not_load_is_reported_and_the_rules_keep_scanning():
 def test_cli_model_on_needs_the_model_downloaded(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
-    from sotto.detect import pfserve
+    from keepmum.cli import app
+    from keepmum.detect import pfserve
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(pfserve, "find_model", lambda: None)
-    path = tmp_path / ".config" / "sotto" / "config.toml"
+    path = tmp_path / ".config" / "keepmum" / "config.toml"
     run = lambda *a: CliRunner().invoke(app, list(a))
     assert run("model", "off").exit_code == 0 and config_mod.load(path).model is False
     assert run("model", "on").exit_code == 2 and config_mod.load(path).model is False
@@ -270,10 +270,10 @@ def test_unknown_builtin_rules_are_config_errors(tmp_path):
 def test_cli_rules_off_needs_yes_for_secret_rules(tmp_path, monkeypatch):
     from typer.testing import CliRunner
 
-    from sotto.cli import app
+    from keepmum.cli import app
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    path = tmp_path / ".config" / "sotto" / "config.toml"
+    path = tmp_path / ".config" / "keepmum" / "config.toml"
     run = lambda *a: CliRunner().invoke(app, list(a))
     assert run("rules", "off", "nope").exit_code == 2
     assert run("rules", "off", "key-in-prose").exit_code == 2  # finds secrets
@@ -288,7 +288,7 @@ def test_cli_rules_off_needs_yes_for_secret_rules(tmp_path, monkeypatch):
 
 
 def test_rules_turned_off_apply_while_running(tmp_path):
-    from sotto import launch
+    from keepmum import launch
 
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("[detect]\nmodel = false\n")

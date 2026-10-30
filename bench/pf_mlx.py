@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sotto.detect import Span
+from keepmum.detect import Span
 
 SOURCE = "pf"
 
@@ -173,7 +173,7 @@ class PrivacyFilter:
         self.window = window
         # MLX GPU streams belong to the thread that created them: one thread loads the model
         # and runs every forward pass, whichever thread calls detect().
-        self._thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sotto-pf")
+        self._thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="keepmum-pf")
         self._thread.submit(self._load).result()
 
     def _load(self) -> None:

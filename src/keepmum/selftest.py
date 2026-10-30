@@ -1,4 +1,4 @@
-"""`sotto selftest`: a canary secret goes through the proxy to a local mock upstream.
+"""`keepmum selftest`: a canary secret goes through the proxy to a local mock upstream.
 
 Everything runs in this process over ASGI transports: no port is opened and nothing leaves
 the machine. The test fails if any form of the canary (raw, JSON-escaped, base64, URL-encoded)
@@ -46,7 +46,7 @@ class MockUpstream:
             return JSONResponse({"ok": True})
         req = json.loads(body)
         found = PLACEHOLDER.findall(body.decode())
-        ph = f"SOTTO_{found[0][0]}_{found[0][1]}" if found else "none"
+        ph = f"KEEPMUM_{found[0][0]}_{found[0][1]}" if found else "none"
         if req.get("stream"):
             return Response(self.stream(ph), media_type="text/event-stream")
         return JSONResponse({
@@ -146,11 +146,11 @@ async def run(detector, verbose: bool = True) -> bool:
     r = await bclient.post("/v1/messages", json=body, headers=auth)
     check("detector failure blocks the request", r.status_code == 500 and len(mock.received) == sent)
 
-    r = await client.get("/_sotto/stats", headers={"authorization": "Bearer selftest"})
+    r = await client.get("/_keepmum/stats", headers={"authorization": "Bearer selftest"})
     stats = r.text
     check("stats feed served with the token", r.status_code == 200 and json.loads(stats)["redacted"].get("SECRET", 0) >= 4)
     check("stats feed holds no value or placeholder", canary not in stats and not PLACEHOLDER.search(stats))
-    r = await client.get("/_sotto/stats")
+    r = await client.get("/_keepmum/stats")
     check("stats feed refused without the token", r.status_code == 401)
 
     leaked = [f for f in _forms(canary) if any(f in b for b in mock.received)]
