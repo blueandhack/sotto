@@ -1,9 +1,14 @@
-import pytest
+"""Tests run in a HOME of their own, so they never write the developer's salt, history or
+settings, and never move their sotto folders. pf-serve and the model are still found where
+this Mac keeps them, read only."""
 
-from keepmum import legacy
+import os
+import tempfile
+from pathlib import Path
 
-
-@pytest.fixture(autouse=True)
-def _no_migration(monkeypatch):
-    """CLI tests run with the real HOME: never move the developer's own sotto folders."""
-    monkeypatch.setattr(legacy, "migrate_quietly", lambda: None)
+_real = Path.home()
+_pf_serve = _real / ".local" / "share" / "keepmum" / "bin" / "pf-serve"
+if _pf_serve.exists():
+    os.environ.setdefault("KEEPMUM_PF_SERVE", str(_pf_serve))
+os.environ.setdefault("HF_HOME", str(_real / ".cache" / "huggingface"))
+os.environ["HOME"] = tempfile.mkdtemp(prefix="keepmum-tests-")
